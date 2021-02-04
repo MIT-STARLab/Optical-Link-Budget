@@ -991,7 +991,7 @@ class Quadcell:
         self.PSF_sum_2D_A = lambda x,y,dx=0,dy=0:sum_function( x, y,dx,dy,grid=False)
         self.PSF_sum_2D_B = lambda x,y,dx=0,dy=0:sum_function(-x, y,dx,dy,grid=False)
         self.PSF_sum_2D_C = lambda x,y,dx=0,dy=0:sum_function(-x,-y,dx,dy,grid=False)
-        self.PSF_sum_2D_D = lambda x,y,dx=0,dy=0:sum_function( x,-y,dx,dy,grid=False)    
+        self.PSF_sum_2D_D = lambda x,y,dx=0,dy=0:sum_function( x,-y,dx,dy,grid=False)
     
     def set_PSF_2D(self,x_samp,y_samp,v_samp,n_int2d=1000,deg=3):
         ''' Compute and set the cumulative sum of the PSF for each quadrant, 2D grid PSF samples
@@ -1001,36 +1001,37 @@ class Quadcell:
         y_samp: sample postion, m or interpolation function input unit
         v_samp: sample relative intesisty
         n_int2d resolution of the cumulative sum on the quadrant
-        def: interpolation degree for the cumulative sum on the quadrant
+        deg: interpolation degree for the cumulative sum on the quadrant
         '''
-        normalize = np.sum(v_samp)
+        
+        normalize = np.sum(v_samp)*(x_samp[1]-x_samp[0])*(y_samp[1]-y_samp[0])
         v_samp = v_samp/normalize
-        #center_x = np.sum(v_samp*x_samp)/np.sum(v_samp)
-        #center_y = np.sum(v_samp*y_samp)/np.sum(v_samp)
         
         # PSF linear interpolation
-        x = np.linspace(x_samp[0],x_samp[-1],n_int2d)[:, np.newaxis]
-        y = np.linspace(y_samp[0],y_samp[-1],n_int2d)[np.newaxis, :]
+        x = np.linspace(x_samp[0],x_samp[-1],n_int2d)#[:, np.newaxis]
+        y = np.linspace(y_samp[0],y_samp[-1],n_int2d)#[np.newaxis, :]
         xx, yy = np.meshgrid(x,y)
         v_samp_lookup = scit.RectBivariateSpline(x_samp,y_samp,v_samp,kx=1,ky=1)
-        step_coef = (1/n_int2d)**2
+        
+        dx_dy_integ_coef = (1/n_int2d)**2
+        dx_dy_integ_coef *= (x_samp[-1]-x_samp[0])*(y_samp[-1]-y_samp[0])
         
         #integration over each quadrant, and sum interpolation function, shifted by gap value
         v = v_samp_lookup( xx, yy, grid=False)
-        v_integ = np.cumsum(np.cumsum(v,axis=0),axis=1)*step_coef
-        self.PSF_sum_2D_A = lambda vx,vy,dx=0,dy=0: (scit.RectBivariateSpline(x-self.gap/2,y-self.gap/2,v_integ,kx=deg,ky=deg))( vx, vy,dx,dy,grid=False)
+        v_integ = np.cumsum(np.cumsum(v,axis=0),axis=1)*dx_dy_integ_coef
+        self.PSF_sum_2D_A = lambda vx,vy,dx=0,dy=0: (scit.RectBivariateSpline(x+self.gap/2,y+self.gap/2,v_integ,kx=deg,ky=deg))( vx, vy,dx,dy,grid=False)
         
         v = v_samp_lookup(-xx, yy, grid=False)
-        v_integ = np.cumsum(np.cumsum(v,axis=0),axis=1)*step_coef
-        self.PSF_sum_2D_B = lambda vx,vy,dx=0,dy=0: (scit.RectBivariateSpline(x-self.gap/2,y-self.gap/2,v_integ,kx=deg,ky=deg))(-vx, vy,dx,dy,grid=False)
+        v_integ = np.cumsum(np.cumsum(v,axis=0),axis=1)*dx_dy_integ_coef
+        self.PSF_sum_2D_B = lambda vx,vy,dx=0,dy=0: (scit.RectBivariateSpline(x+self.gap/2,y+self.gap/2,v_integ,kx=deg,ky=deg))(-vx, vy,dx,dy,grid=False)
         
         v = v_samp_lookup(-xx,-yy, grid=False)
-        v_integ = np.cumsum(np.cumsum(v,axis=0),axis=1)*step_coef
-        self.PSF_sum_2D_C = lambda vx,vy,dx=0,dy=0: (scit.RectBivariateSpline(x-self.gap/2,y-self.gap/2,v_integ,kx=deg,ky=deg))(-vx,-vy,dx,dy,grid=False)
+        v_integ = np.cumsum(np.cumsum(v,axis=0),axis=1)*dx_dy_integ_coef
+        self.PSF_sum_2D_C = lambda vx,vy,dx=0,dy=0: (scit.RectBivariateSpline(x+self.gap/2,y+self.gap/2,v_integ,kx=deg,ky=deg))(-vx,-vy,dx,dy,grid=False)
         
         v = v_samp_lookup( xx,-yy, grid=False)
-        v_integ = np.cumsum(np.cumsum(v,axis=0),axis=1)*step_coef
-        self.PSF_sum_2D_D = lambda vx,vy,dx=0,dy=0: (scit.RectBivariateSpline(x-self.gap/2,y-self.gap/2,v_integ,kx=deg,ky=deg))( vx,-vy,dx,dy,grid=False)
+        v_integ = np.cumsum(np.cumsum(v,axis=0),axis=1)*dx_dy_integ_coef
+        self.PSF_sum_2D_D = lambda vx,vy,dx=0,dy=0: (scit.RectBivariateSpline(x+self.gap/2,y+self.gap/2,v_integ,kx=deg,ky=deg))( vx,-vy,dx,dy,grid=False)
         
     def eval_quadrants(self,x_spot,y_spot,dx=0,dy=0):
         #Normalized quadrant amplitude for a give spot postition
@@ -1104,8 +1105,12 @@ class Quadcell:
         all_quadrants = np.stack((A,B,C,D))
         
         all_power = all_quadrants*optical_power
+        print('power',all_power[0][750][750])
         all_current = all_power*self.responsivity
+        #print('Rqc',self.responsivity)
+        #print('current',all_current[0][750][750])
         all_voltage = all_current*self.transimpedance
+        #print('volts',all_voltage[0][750][750])
         all_shot_noise = self.transimpedance*np.sqrt(2*qe*all_current*self.bandwidth)
         all_amp_noise = self.amplifier_noise*np.sqrt(self.bandwidth)
         all_noise = np.sqrt(all_shot_noise**2+all_amp_noise**2)
@@ -1159,7 +1164,6 @@ def sampled_2D_interpolation_PSF_corner(x_samp,y_samp,v_samp,n_int2d=1000,deg=3)
     v_samp = v_samp/normalize
     center_x = np.sum(v_samp*x_samp)/np.sum(v_samp)
     center_y = np.sum(v_samp*y_samp)/np.sum(v_samp)
-    print(center_x,center_y)
     
     x = np.linspace(x_samp[0],x_samp[-1],n_int2d)
     y = np.linspace(y_samp[0],y_samp[-1],n_int2d)
