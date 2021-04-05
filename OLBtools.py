@@ -1,5 +1,5 @@
 '''
-Copyright © 2020 Paul Serra
+Copyright © 2020 Paul Serra, Peter Grenfell, Ondrej cierny
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -49,13 +49,13 @@ def extend_integ_axis(arrays,integ_var):
     arl = np.broadcast_arrays(integ_var,h)
     return arl[1:]
     
-mpin = np.frompyfunc(mp.mpf,1,1)
-gamma = np.frompyfunc(mp.gamma,1,1)
+mpin    = np.frompyfunc(mp.mpf,1,1)
+gamma   = np.frompyfunc(mp.gamma,1,1)
 besselk = np.frompyfunc(mp.besselk,2,1)
-hyp1F2 = np.frompyfunc(mp.hyp1f2,4,1)
-mpexp = np.frompyfunc(mp.exp,1,1)
-mpsin = np.frompyfunc(mp.sin,1,1)
-mpout = np.frompyfunc(float,1,1)
+hyp1F2  = np.frompyfunc(mp.hyp1f2,4,1)
+mpexp   = np.frompyfunc(mp.exp,1,1)
+mpsin   = np.frompyfunc(mp.sin,1,1)
+mpout   = np.frompyfunc(float,1,1)
 
 def beam_radius(W_0,G_Theta,G_Lambda):
     return W_0/np.sqrt(G_Theta**2 + G_Lambda**2)
@@ -193,6 +193,8 @@ def pass_azimuth_elevation_and_time(latitude,longitude,altitude,inclination,min_
     
     # OGS coordinates
     x0,y0,z0 = earth_centered_intertial_to_latitude_longitude(latitude,longitude,we*t,Re,0,0)
+    x0,y0,z0 = np.broadcast_arrays(x0,y0,z0)
+    ogs = np.array([x0,y0,z0]).transpose()
     
     if 0:
         import matplotlib.pyplot as plt
@@ -210,8 +212,29 @@ def pass_azimuth_elevation_and_time(latitude,longitude,altitude,inclination,min_
     zs = z-z0
     ns = np.sqrt(xs**2 + ys**2 + zs**2)
     
+    # satelite unit vector
+    sat = np.array([xs/ns,ys/ns,zs/ns]).transpose()
+    
     # Zentih angle at OGS
     zenith = np.arccos((x0*xs + y0*ys + z0*zs)/ns/Re)
+    
+    # Sat unit vector in OGS horizontal plane
+    sat_horizontal = np.cross(ogs,sat)/Re #90 deg away
+    
+    # East vector at OGS
+    east = np.cross([0,0,1],ogs)/Re
+    
+    # North vector at OGS
+    north = np.cross(ogs,east)/Re
+    
+    def dot_2D(a,b):
+        return a[:,0]*b[:,0] + a[:,1]*b[:,1] + a[:,2]*b[:,2]
+    
+    cos_east  = dot_2D(sat_horizontal,east)
+    cos_north = dot_2D(sat_horizontal,north)
+    
+    # Azimuth angle at OGS
+    azimuth = np.arctan2(cos_north,-cos_east)
     
     #on top of lat/long = 0
     #+z
@@ -221,7 +244,7 @@ def pass_azimuth_elevation_and_time(latitude,longitude,altitude,inclination,min_
     #+x
     
     
-    return t,zenith
+    return t,zenith,azimuth
     
 
 #----------------------------------------------------------
@@ -1129,6 +1152,28 @@ class Quadcell:
         NEA = 1/SNR/slope
         return NEA
 
+class Photodiode:
+    @initializer #automaticaly add agurment to each instances
+    def __init__(self,gain=1,responsivity=0.5,bandwidth=1e6,excess_noise_factor=1,dark_current=0):
+        pass
+    
+    def signal(self,optical_power):
+        return self.gain*self.responsivity*optical_power
+    
+    def noise(self,optical_power):
+        return np.sqrt(2*qe*self.excess_noise_factor*(self.signal(optical_power)+self.dark_current)*self.bandwidth)
+        
+    def SNR(self,optical_power):
+        #Defined as (I/In)**2
+        return (self.signal(optical_power)/self.noise(optical_power))**2
+        
+def BER_OOK(SNR):
+    return 0.5*scsp.erfc(np.sqrt(SNR)/(2*np.sqrt(2)))
+    
+def BER_OOK_integrated(SNR,PDF):
+    BER = scsp.erfc(np.sqrt(SNR)/(2*np.sqrt(2)))
+    return 0.5*np.sum(PDF*BER, axis = 0)
+
 # =====================================================================================================
 # deprecated
 # =====================================================================================================
@@ -1164,6 +1209,7 @@ def sampled_2D_interpolation_PSF_corner(x_samp,y_samp,v_samp,n_int2d=1000,deg=3)
     v_samp = v_samp/normalize
     center_x = np.sum(v_samp*x_samp)/np.sum(v_samp)
     center_y = np.sum(v_samp*y_samp)/np.sum(v_samp)
+    #print(v_samp.shape)
     
     x = np.linspace(x_samp[0],x_samp[-1],n_int2d)
     y = np.linspace(y_samp[0],y_samp[-1],n_int2d)
