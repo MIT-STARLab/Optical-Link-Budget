@@ -7,8 +7,8 @@ import matplotlib.colors as mpc
 import OLBtools as olb
 
 # Objectives
-elevation_min = olb.radians(00)  #20 degrees
-elevation_max = olb.radians(90)  #20 degrees
+elevation_min = olb.radians(00)  #00 degrees
+elevation_max = olb.radians(90)  #90 degrees
 
 # Orbits
 altitude    = 500e3 # spacecraft altitude
@@ -16,7 +16,7 @@ altitude    = 500e3 # spacecraft altitude
 # Transmit
 P_avg =  0.050         # Transmit power laser, W
 lambda_gl = 915e-9     # Laser 1 wavelength, m
-beam_width = 200e-6    # beam width, FWMH radian
+beam_width = 1000e-6   # beam width, FWMH radian
 
 # Receive
 aperture = 600e-3       # Aperture diameter, m
