@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mpc
 
 import OLBtools as olb
+import OLBtools.scintillation as scint
 
 elevation = olb.radians(20)  #20 degrees
 
@@ -25,7 +26,7 @@ tx_system_loss = 3.00   # dB (10Log)
 rx_system_loss = 3.00   # dB (10Log)
 
 # Atmosphere
-Cn2 = olb.Cn2_HV_57      #Hufnagel-valley 5/7 model
+Cn2 = scint.Cn2_HV_57      #Hufnagel-valley 5/7 model
 
 #----------------------------------------------------------
 # LINK
@@ -52,19 +53,19 @@ Pe = Pe[:,np.newaxis]
      
 
 
-sig2_x, sig2_y = olb.get_scintillation_uplink_untracked_xy(h_0,H,zenith,k,W_0,Cn2,r)
+sig2_x, sig2_y = scint.get_scintillation_uplink_untracked_xy(h_0,H,zenith,k,W_0,Cn2,r)
 sig2_x = sig2_x[:,np.newaxis]
 sig2_y = sig2_y[:,np.newaxis]
-alpha,mu,r =  olb.gamma_gamma_to_alpha_mu(sig2_x,sig2_y,orders=[2,3])
+alpha,mu,r =  scint.gamma_gamma_to_alpha_mu(sig2_x,sig2_y,orders=[2,3])
 
 def plt_1_distrib(sx,sy,psv,pev,pnv):
-    alpha,mu,r =  olb.gamma_gamma_to_alpha_mu(sx,sy,orders=[2,3])
-    cdfs = olb.alpha_mu_cdf(alpha,mu,r,pev,pnv)
+    alpha,mu,r =  scint.gamma_gamma_to_alpha_mu(sx,sy,orders=[2,3])
+    cdfs = scint.alpha_mu_cdf(alpha,mu,r,pev,pnv)
     cdfst = cdfs.transpose()
     
-    p50 = olb.alpha_mu_inv_cdf(alpha,mu,r,pev,0.50)
-    p90 = olb.alpha_mu_inv_cdf(alpha,mu,r,pev,0.90)
-    p99 = olb.alpha_mu_inv_cdf(alpha,mu,r,pev,0.99)
+    p50 = scint.alpha_mu_inv_cdf(alpha,mu,r,pev,0.50)
+    p90 = scint.alpha_mu_inv_cdf(alpha,mu,r,pev,0.90)
+    p99 = scint.alpha_mu_inv_cdf(alpha,mu,r,pev,0.99)
     
     if 1:
         plt.figure()

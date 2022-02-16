@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mpc
 
 import OLBtools as olb
+import OLBtools.scintillation as scint
 
 # Objectives
 elevation_min = olb.radians(00)  #00 degrees
@@ -33,7 +34,7 @@ tx_system_loss = 3.00    # dB (10Log)
 rx_system_loss = 3.00    # dB (10Log)
 
 # Atmosphere
-Cn2 = olb.Cn2_HV_57      # Hufnagel-valley 5/7 model
+Cn2 = scint.Cn2_HV_57      # Hufnagel-valley 5/7 model
 
 #----------------------------------------------------------
 
@@ -65,16 +66,16 @@ Pe = aperture_scaling*P_avg*10**(all_losses/10)
 Pe = Pe[:,np.newaxis] #on second dim
 
 # Scintillation
-sig2_x, sig2_y = olb.get_scintillation_downlink_xy(h_0,H,zenith,k,W_0,Cn2)
+sig2_x, sig2_y = scint.get_scintillation_downlink_xy(h_0,H,zenith,k,W_0,Cn2)
 sig2_x = sig2_x[:,np.newaxis]
 sig2_y = sig2_y[:,np.newaxis]
 
 # Power distribution coeficients
-alpha,mu,r =  olb.gamma_gamma_to_alpha_mu(sig2_x,sig2_y,orders=[2,3])
+alpha,mu,r =  scint.gamma_gamma_to_alpha_mu(sig2_x,sig2_y,orders=[2,3])
 
 # Power log scale, must include 1% to 99% cumulated power
-Hv = np.ceil(np.log10(olb.alpha_mu_inv_cdf(alpha,mu,r,Pe,0.01).max()))
-Hl = np.floor(np.log10(olb.alpha_mu_inv_cdf(alpha,mu,r,Pe,0.99).min()))
+Hv = np.ceil(np.log10(scint.alpha_mu_inv_cdf(alpha,mu,r,Pe,0.01).max()))
+Hl = np.floor(np.log10(scint.alpha_mu_inv_cdf(alpha,mu,r,Pe,0.99).min()))
 Ps = np.logspace(Hl,Hv,500)
 Psn = Ps[np.newaxis,:]#on second dim
 # Sacle interval centers
@@ -83,7 +84,7 @@ dPs = Ps[1:]-Ps[:-1]
 dPs = dPs[:,np.newaxis]
 
 # Cumulative distribution function
-cdfs = olb.alpha_mu_cdf(alpha,mu,r,Pe,Psn)
+cdfs = scint.alpha_mu_cdf(alpha,mu,r,Pe,Psn)
 cdfst = cdfs.transpose()
 
 # Prpablility densisty function, over log scale intervals
@@ -135,15 +136,15 @@ if 1:
     plt.title('BER, 3dB')
 
 def plt_1_distrib(sx,sy,psv,pev,pnv):
-    alpha,mu,r =  olb.gamma_gamma_to_alpha_mu(sx,sy,orders=[2,3])
-    cdfs = olb.alpha_mu_cdf(alpha,mu,r,pev,pnv)
+    alpha,mu,r =  scint.gamma_gamma_to_alpha_mu(sx,sy,orders=[2,3])
+    cdfs = scint.alpha_mu_cdf(alpha,mu,r,pev,pnv)
     cdfst = cdfs.transpose()
     
-    p01 = olb.alpha_mu_inv_cdf(alpha,mu,r,pev,0.01)
-    p10 = olb.alpha_mu_inv_cdf(alpha,mu,r,pev,0.10)
-    p50 = olb.alpha_mu_inv_cdf(alpha,mu,r,pev,0.50)
-    p90 = olb.alpha_mu_inv_cdf(alpha,mu,r,pev,0.90)
-    p99 = olb.alpha_mu_inv_cdf(alpha,mu,r,pev,0.99)
+    p01 = scint.alpha_mu_inv_cdf(alpha,mu,r,pev,0.01)
+    p10 = scint.alpha_mu_inv_cdf(alpha,mu,r,pev,0.10)
+    p50 = scint.alpha_mu_inv_cdf(alpha,mu,r,pev,0.50)
+    p90 = scint.alpha_mu_inv_cdf(alpha,mu,r,pev,0.90)
+    p99 = scint.alpha_mu_inv_cdf(alpha,mu,r,pev,0.99)
     
     plt.figure()
     plt.yscale('log')
