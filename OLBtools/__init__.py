@@ -41,7 +41,7 @@ min_log = 1e-30
 def degrees(a): return a*180/np.pi
 def radians(a): return a*np.pi/180
 
-def fwhw_to_diam1e2(fwhm):
+def fwhw_to_radius1e2(fwhm):
     return fwhm/np.sqrt(2*np.log(2))
 def diam1e2_to_fwhw(diam1e2):
     return np.sqrt(2*np.log(2))*diam1e2
@@ -289,6 +289,11 @@ def fwhm_to_radius(fwhm, wavelength):
     beam_radius = (wavelength * np.sqrt(2*np.log(2))) / (np.pi * fwhm)
     return beam_radius
     
+def divergence_to_radius(divergence_1e2:np.ndarray, wavelength) -> np.ndarray:
+    '''Calculates the 1/e^2 Gaussian beam radius given the 1e2 half-angle'''
+    beam_radius = wavelength  / (np.pi * divergence_1e2)
+    return beam_radius
+
 #----------------------------------------------------------
 # LOWTRAN functions
 #----------------------------------------------------------
