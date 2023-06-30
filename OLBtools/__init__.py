@@ -255,22 +255,23 @@ def pass_azimuth_elevation_and_time(latitude,longitude,altitude,inclination,min_
 # Link budget functions
 #----------------------------------------------------------
 
-def path_loss_gaussian(beam_radius, wavelength, distance, rx_diameter, pointing_error=0):
+def path_loss_gaussian(beam_radius, wavelength, distance, rx_diameter, pointing_error=0, M2=1.0):
     # From Matlab linkbudget, author O cierny / P serra
     '''Calculates path loss given a Gaussian beam, and an Rx aperture at a
     specific distance. Assumes normalized input power, returns dB loss.
     All units in meters / radians.
     beam_radius: 1/e^2 radius of the beam at Tx [m]
-    pointing_error: misalignment between Tx and Rx [rad] (optional)'''
+    pointing_error: misalignment between Tx and Rx [rad] (optional)
+    M2: M square beam quality factor, unitless (optional)'''
 
     # Calculate beam waist at the given distance due to diffraction [m]
-    beam_radius_rx = beam_radius * np.sqrt(1 + ((wavelength*distance)/(np.pi*beam_radius**2))**2);
+    beam_radius_rx = beam_radius * np.sqrt(1 + ((M2*wavelength*distance)/(np.pi*beam_radius**2))**2)
 
     # Calculate distance from center of Gaussian due to pointing error [m]
-    radial_distance = np.tan(pointing_error) * distance;
+    radial_distance = np.tan(pointing_error) * distance
 
     # Calculate irradiance using Gaussian formula [W/m^2]
-    irradiance = (2/(np.pi*beam_radius_rx**2))*np.exp((-2*radial_distance**2)/beam_radius_rx**2);
+    irradiance = (2/(np.pi*beam_radius_rx**2))*np.exp((-2*radial_distance**2)/beam_radius_rx**2)
 
     # Calculate power at Rx aperture [W]
     rx_area = np.pi*(rx_diameter/2)**2 # [m^2]
