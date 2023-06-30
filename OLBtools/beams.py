@@ -4,6 +4,84 @@ from numpy.lib.function_base import meshgrid
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpt
 
+#----------------------------------------------------------
+# Beam convertion functions
+
+def half1e2_to_FWHM(half1e2:np.ndarray) -> np.ndarray:
+    '''Convert a half angle or radius to a FWHM matching quantity'''
+    FWHM = half1e2*2*np.sqrt(2*np.log(2))
+    return FWHM
+
+def FWHM_to_half1e2(FWHM:np.ndarray) -> np.ndarray:
+    '''Convert a FWHM quantity to a matching half angle or radius'''
+    half1e2 = FWHM/(2*np.sqrt(2*np.log(2)))
+    return half1e2
+
+def W0_to_radius1e2(W0:np.ndarray) -> np.ndarray:
+    '''In this module, we assume W0 is the 1/e2 Gaussian beam radius'''
+    radius1e2 = W0
+    return radius1e2
+
+def radius1e2_to_W0(radius1e2:np.ndarray) -> np.ndarray:
+    '''In this module, we assume W0 is the 1/e2 Gaussian beam radius'''
+    W0 = radius1e2
+    return W0
+
+def W0_to_diam1e2(W0:np.ndarray) -> np.ndarray:
+    '''Convert W0 to the 1/e2 Gaussian beam diameter'''
+    diam1e2 = 2*W0
+    return diam1e2
+
+def diam1e2_to_W0(diam1e2:np.ndarray) -> np.ndarray:
+    '''Convert the 1/e2 Gaussian beam diameter to W0'''
+    W0 = 0.5*diam1e2
+    return W0
+
+def W0_to_FWHMdiam(W0:np.ndarray) -> np.ndarray:
+    '''Convert W0 to the Full Width Half Max Gaussian beam diameter'''
+    FWHM_diam = half1e2_to_FWHM(W0)
+    return FWHM_diam
+
+def FWHMdiam_to_W0(FWHM_diam:np.ndarray) -> np.ndarray:
+    '''Convert the Full Width Half Max Gaussian beam diameter to W0'''
+    W0 = FWHM_to_half1e2(FWHM_diam)
+    return W0
+
+def W0_to_halfangle1e2(W0:np.ndarray, wavelength) -> np.ndarray:
+    '''Convert W0 to the 1/e2 Max Gaussian beam half-angle, angles in radians and distances in meters.'''
+    half_angle_1e2 = wavelength  / (np.pi * W0)
+    return half_angle_1e2
+
+def halfangle1e2_to_W0(half_angle_1e2:np.ndarray, wavelength) -> np.ndarray:
+    '''Convert the 1/e2 Max Gaussian beam half-angle to W0, angles in radians and distances in meters.'''
+    W0 = wavelength  / (np.pi * half_angle_1e2)
+    return W0
+
+def W0_to_fullangle1e2(W0:np.ndarray, wavelength) -> np.ndarray:
+    '''Convert W0 to the 1/e2 Max Gaussian beam full angle, angles in radians and distances in meters.'''
+    full_angle_1e2 = 2*W0_to_halfangle1e2(W0, wavelength)
+    return full_angle_1e2
+
+def fullangle1e2_to_W0(full_angle_1e2:np.ndarray, wavelength) -> np.ndarray:
+    '''Convert the 1/e2 Max Gaussian beam full angle to W0, angles in radians and distances in meters.'''
+    W0 = halfangle1e2_to_W0(full_angle_1e2/2, wavelength)
+    return W0
+
+def W0_to_FWHMangle(W0:np.ndarray, wavelength) -> np.ndarray:
+    '''Convert W0 to the Full Width Half Max Gaussian beam angle, angles in radians and distances in meters.'''
+    half_angle_1e2 = W0_to_halfangle1e2(W0, wavelength)
+    FWHM_angle =  half1e2_to_FWHM(half_angle_1e2)
+    return FWHM_angle
+
+def FWHMangle_to_W0(FWHM_angle:np.ndarray, wavelength) -> np.ndarray:
+    '''Convert the Full Width Half Max Gaussian beam angle to W0, angles in radians and distances in meters.'''
+    half_angle_1e2 = FWHM_to_half1e2(FWHM_angle)
+    W0 = halfangle1e2_to_W0(half_angle_1e2, wavelength)
+    return W0
+
+#----------------------------------------------------------
+# Gaussian beam fits and centroids 
+
 def ravel_I_x_y(I:np.ndarray, x:np.ndarray, y:np.ndarray) -> tuple[np.ndarray,np.ndarray,np.ndarray]:
     '''Check if the I/x/y are already 1d, if not generate a mesh for x/y and flattens it'''
 
