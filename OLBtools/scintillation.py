@@ -42,21 +42,46 @@ def Cn2_HV_best(h):
 def Cn2_HV_worst(h):
     # HV57 worst (x10)
     return 10*Cn2_HV_57(h)
+
+def Cn2_ITU_R_P_1621_2(h, v_g=2.3, C0=1.7e-14):
+    '''ITU-R P.1621-2 suggested model under 5.1.1
+    h: altitude in metters
+    v_g: ground wind speed in m.s-1, assume 2.3 m.s-1 by default
+    C_0: Cn2 on the ground, in m-2/3, typically 1.7e-14 m-2/3'''
+    v_rms = np.sqrt(v_g**2 + 3.11*v_g + 360.61)
+    Cn2 = 8.148e-56 * v_rms**2 * h**10 * np.exp(-h/1000) + 2.7e-16 * np.exp(-h/1500) + C0*np.exp(-h/100)
+    return Cn2
     
 #----------------------------------------------------------
+
+def _integration_range(h_0, integration_mode, n_int):
+    '''h_0: ground sation altitude
+    H: target altitude
+    integration_mode: 'linear', 'exponential', or 'ITU'. ITU is per ITU-R P1.1621-2 in 5.1.1.
+    n_int: number of integration point'''
+    if integration_mode == 'linear':      h = np.linspace(h_0,np.minimum(H,20e3),n_int,axis=-1)
+    if integration_mode == 'exponential': raise NotImplementedError
+    if integration_mode == 'ITU':
+        i = np.linspace(h/h,139,139,axis=-1)
+        h_i = np.exp(i - 1 / 20e3)
+        h = h_0 + np.cumsum(h_i,axis=-1)
+
+    np.logspace(start=h_0, stop=np.log(np.minimum(H,20e3)), num=n_int, base=np.e ,axis=-1)
     
 def Rytov_var(Cn2_h,k,L):
     # Laser Beam Propagation through random Media, 2nd edition  Larry C. Andrews and Ronald L. Phillips page 140
     return 1.23*Cn2_h*k**(5/7)*L**(11/6)
     
-def Fried_param(zenith,k,Cn2,h_0,H,n_int=1000):
+def Fried_param(zenith,k,Cn2,h_0,H,integration_mode='linear',n_int=1000):
     '''Fried's pararamter for a ground station.
     Andrews Ch12, p492, Eq23
     zenith:  zenith angle in radians
     k: angular wave number
     Cn2: function of h
     h_0: ground sation altitude
-    H: target altitude'''
+    H: target altitude
+    integration_mode: 'linear', 'exponential', or 'ITU'. ITU is per ITU-R P1.1621-2 in 5.1.1.
+    n_int: number of integration point'''
     
     # Integration range
     h = np.linspace(h_0,np.minimum(H,20e3),n_int,axis=-1)
