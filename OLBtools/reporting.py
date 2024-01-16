@@ -47,7 +47,7 @@ class Report:
             changed = [item.a_path for item in repo.index.diff(None)]
             if scrict_name   in repo.untracked_files: file_status = 'file is not tracked'
             elif scrict_name in changed: file_status = 'file changed'
-            else: scrict_name = ''
+            else: file_status = ''
             if repo.is_dirty(untracked_files=True): file_status += ', repos is dirty'
             git_string = '<br>Git: %s, %s' % (commit_hash,file_status)
                 
@@ -281,7 +281,7 @@ class CapacityVsRange(Report):
         ax = fig.add_subplot(111)
         index = 0
         for case_name in self.plot_legend:
-            ax.loglog(link_range[:,index], datarate[:,index]/1e6,label=case_name)
+            ax.loglog(link_range[:,index]/1e3, datarate[:,index]/1e6,label=case_name)
             index +=1
         if index > 1: ax.legend()
         ax.set_xlabel('Link range, km')
