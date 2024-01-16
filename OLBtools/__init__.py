@@ -557,11 +557,11 @@ class Photodiode:
     def estimatedNEP(self):
         """Find estimated NEP based on shot noise and dark current alone"""
         # We want to solve S (signal) for SNR = 1, noise = signal
-        # S**2 = sqrt( 2*qe*ENF*(S+dark)*BW + i_amp*BW)
-        # S**2 - K*S - K*dark - i_amp = 0 with K = 2*qe*ENF*BW
-        # S = (K + sqrt(K**2 + 4*(K*dark+i_amp))) / 2
+        # S**2 = 2*qe*ENF*(S+dark)*BW + i_amp**2*BW
+        # S**2 - K*S - K*dark - i_amp**2 = 0 with K = 2*qe*ENF*BW
+        # S = (K + sqrt(K**2 + 4*(K*dark+i_amp**2))) / 2
         K = 2*qe*self.excess_noise_factor*self.bandwidth
-        signal = (K + np.sqrt(K**2 + 4*(K*self.dark_current+self.amp_noise_density))) / 2
+        signal = (K + np.sqrt(K**2 + 4*(K*self.dark_current+self.amp_noise_density**2))) / 2
         NEP = signal/(self.gain*self.responsivity) / np.sqrt(self.bandwidth)
         return NEP
     
@@ -569,9 +569,9 @@ class Photodiode:
         return self.gain*self.responsivity*optical_power
     
     def noise(self,optical_power):
-        APD_shot_noise = np.sqrt(2*qe*self.excess_noise_factor*(self.signal(optical_power)+self.dark_current)*self.bandwidth)
-        amplifier_noise = self.amp_noise_density*np.sqrt(self.bandwidth)
-        return np.sqrt(APD_shot_noise**2 + amplifier_noise**2)
+        APD_shot_noise_squared = 2*qe*self.excess_noise_factor*(self.signal(optical_power)+self.dark_current)*self.bandwidth
+        amplifier_noise_squared = self.amp_noise_density**2*self.bandwidth
+        return np.sqrt(APD_shot_noise_squared + amplifier_noise_squared)
 
         
     def SNR(self,optical_power):
@@ -582,7 +582,9 @@ class Photodiode:
         # Noise RMS is Signal / SNR
         supported_noise = self.signal(optical_power)/required_SNR
         # Re-arange Photodiode.noise
-        supported_bandwidth = supported_noise**2 / (2*qe*self.excess_noise_factor*(self.signal(optical_power)+self.dark_current) + self.amp_noise_density**2)
+        APD_shot_noise_density_squared = 2*qe*self.excess_noise_factor*(self.signal(optical_power)+self.dark_current)
+        amplifier_noise_density_squared = self.amp_noise_density**2
+        supported_bandwidth = supported_noise**2 / (APD_shot_noise_density_squared + amplifier_noise_density_squared)
         return supported_bandwidth
         
 def BER_OOK(SNR):

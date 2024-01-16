@@ -3,11 +3,13 @@ import sys
 import os
 import numpy as np
 from .. import OLBtools as olb
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 import matplotlib.pyplot as plt
 import io
 import base64
 
-from dataclasses import dataclass, field, fields
+import dataclasses
 
 class Report:
     def __init__(self,title:str='Link Budget'):
@@ -16,6 +18,15 @@ class Report:
 
     def AddHtml(self, html):
         self.body += '<p>' + html + '</p>'
+
+    def AddFigure(self, fig:Figure): 
+        ''' Save the current figure as a base64 embeded in html'''
+        image_string = io.BytesIO()
+        fig.savefig(image_string, format='jpg')
+        image_string.seek(0)
+        image_base64 = base64.b64encode(image_string.read()).decode()
+
+        self.AddHtml('<img src="data:image/png;base64,%s", alt="Red dot"/>' % image_base64)
 
     def HtmlString(self):
 
@@ -107,7 +118,7 @@ class Table:
 
 class CapacityVsRange(Report):
 
-    @dataclass
+    @dataclasses.dataclass
     class InputsCase:
         range_start       : float
         range_end         : float
@@ -125,7 +136,7 @@ class CapacityVsRange(Report):
         M2_factor         : float       = 1.0
         pointing_error    : float       = 0.0
         datarate_to_BW    : float       = 1.0
-        db_losses         : list[float] = field(default_factory=list)
+        db_losses         : list[float] = dataclasses.field(default_factory=list)
         nametag           : str         = ''
         plot_legend       : str         = ''
 
@@ -148,6 +159,8 @@ class CapacityVsRange(Report):
                 f'{self.M2_factor:.2f}',
                 f'{self.datarate_to_BW:.2f} b/Hz',
             ]
+        
+        def copy(self) -> 'CapacityVsRange.InputsCase': return dataclasses.replace(self)
 
     def __init__(self,cases:list[InputsCase] = [], **karg):
         super().__init__(**karg)
@@ -184,7 +197,7 @@ class CapacityVsRange(Report):
     def ConcatenateCases(self):
         '''Copy over the fileds from the case list, and concatenate them as numpy arrays using the second dimention as case index'''
         
-        for fd in fields(self.InputsCase):
+        for fd in dataclasses.fields(self.InputsCase):
 
             thing_list = [getattr(case, fd.name) for case in self.cases]
 
@@ -239,38 +252,32 @@ class CapacityVsRange(Report):
         # Estimate required bandwidth for givien BER
         detector_bw = olb.suported_bandwidth_OOK(pd,P_rx_avg,self.target_BER)
 
+        print(detector_bw[:,0]/detector_bw[:,1])
+
         # Supported bandwidth is at most hardware bandwidth
         detector_bw = np.minimum(detector_bw, self.APD_bandwidth)
 
         # Data is up to 2 time faster than bandwidth
         datarate = self.datarate_to_BW*detector_bw
 
-        print([f'{x*1e12:.3f} pW/rHz' for x in pd.estimatedNEP()])
-
         return link_range, datarate
 
-    def AddThroughputFigure(self):
+    def GetThroughputFigure(self) -> tuple[Figure, Axes]:
 
         link_range, datarate = self.Run()
 
         fig = plt.figure()
+        ax = fig.add_subplot(111)
         index = 0
         for case_name in self.plot_legend:
-            plt.loglog(link_range[:,index], datarate[:,index]/1e6,label=case_name)
+            ax.loglog(link_range[:,index], datarate[:,index]/1e6,label=case_name)
             index +=1
-        if index > 1: plt.legend()
-        plt.xlabel('Link range, km')
-        plt.ylabel('Capacity, Mbps')
+        if index > 1: ax.legend()
+        ax.set_xlabel('Link range, km')
+        ax.set_ylabel('Capacity, Mbps')
 
-        # Save the current figure as a base64 embeded
-        image_string = io.BytesIO()
-        plt.savefig(image_string, format='jpg')
-        image_string.seek(0)
-        image_base64 = base64.b64encode(image_string.read()).decode()
+        return fig, ax
 
-        self.AddHtml('<img src="data:image/png;base64,%s", alt="Red dot"/>' % image_base64)
-
-        return self
     
     def AddSampleTable(self, link_ranges:[int]):
 
@@ -294,21 +301,15 @@ class CapacityVsRange(Report):
 REPORT_STYLE = '''
 <style>
 
-h1 {
+html * {
     font-family: arial, sans-serif;
+}
+
+h1 {
     text-align: center;
 }
 
-h2 {
-    font-family: arial, sans-serif;
-}
-
-p {
-    font-family: arial, sans-serif;
-}
-
 table.time {
-  font-family: arial, sans-serif;
   border-collapse: collapse;
   width: 100%;
   table-layout:fixed;
