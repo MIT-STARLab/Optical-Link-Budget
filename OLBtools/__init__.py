@@ -11,6 +11,7 @@ The Software is provided “as is”, without warranty of any kind, express or i
 # Imports
 import inspect
 from functools import wraps
+from dataclasses import dataclass
 
 import numpy as np
 import mpmath as mp
@@ -68,35 +69,6 @@ def beam_radius(W_0,G_Theta,G_Lambda):
 def apply_min(x):
     return x #(x>min_log)*x + (x<=min_log)*min_log
     
-def initializer(func):
-    """
-    Automatically assigns the parameters.
-    Nadia Alramli, from stackoverflow
-    https://stackoverflow.com/questions/1389180/automatically-initialize-instance-variables
-
-    >>> class process:
-    ...     @initializer
-    ...     def __init__(self, cmd, reachable=False, user='root'):
-    ...         pass
-    >>> p = process('halt', True)
-    >>> p.cmd, p.reachable, p.user
-    ('halt', True, 'root')
-    """
-    names, varargs, keywords, defaults = inspect.getargspec(func)
-
-    @wraps(func)
-    def wrapper(self, *args, **kargs):
-        for name, arg in list(zip(names[1:], args)) + list(kargs.items()):
-            setattr(self, name, arg)
-
-        for name, default in zip(reversed(names), reversed(defaults)):
-            if not hasattr(self, name):
-                setattr(self, name, default)
-
-        func(self, *args, **kargs)
-
-    return wrapper
-
 #----------------------------------------------------------
 # Link Geometry
 
@@ -352,17 +324,22 @@ def transmittance(zenith,wavelength,model,H):
     
 #def MODTRAN_transmittance(zenith
 
+@dataclass
 class Quadcell:
-    @initializer #automaticaly add agurment to each instances
-    def __init__(self, gap=0,responsivity=0.5,transimpedance=1e6,amplifier_noise=1e-5,bandwidth=1e3):
-        ''' Object for a 4-quadrant pin detector, provides methods for postion, noise and noise-equivalent angle
-        gap: size of the gap between quadrants, in m or PSF size units
-        responsivity: photodiode repsonsivity in A/W
-        transimpedance: amplifier gain in V/A or ohm
-        amplifier_noise: output refered noise of the amplifier, in v/rtHz
-        bandwidth: bandwidth for the detection, in Hz
+    '''Class for a 4-quadrant pin detector, provides methods for postion, noise and noise-equivalent angle
+    gap: size of the gap between quadrants, in m or PSF size units
+    responsivity: photodiode repsonsivity in A/W
+    transimpedance: amplifier gain in V/A or ohm
+    amplifier_noise: output refered noise of the amplifier, in v/rtHz
+    bandwidth: bandwidth for the detection, in Hz
         '''
-        
+
+    gap:float=0.0
+    responsivity:float=0.9
+    transimpedance:float=1e6
+    amplifier_noise:float=1e-5
+
+    def __post_init__(self):
         #Quadrants defined as A,B,C,D, in trigonometric order, in quadcell front view.
         # A: +x,+y, B:-x,+y, C:-x,-y, D:+x,-y
         
@@ -563,24 +540,69 @@ class Quadcell:
         
         NEA = 1/SNR/slope
         return NEA
-
+    
+@dataclass
 class Photodiode:
-    @initializer #automaticaly add agurment to each instances
-    def __init__(self,gain=1,responsivity=0.5,bandwidth=1e6,excess_noise_factor=1,dark_current=0):
-        pass
+    '''Class for an APD detector
+    Uses dark current and excess noise factor to derive noise, and add NEP inquadrature if specified
+    '''
+   
+    gain:float=1.0
+    responsivity:float=0.9
+    bandwidth:float=1e6
+    excess_noise_factor:float=1.0
+    dark_current:float=0
+    amp_noise_density:float=0
+
+    def estimatedNEP(self):
+        """Find estimated NEP based on shot noise and dark current alone"""
+        # We want to solve S (signal) for SNR = 1, noise = signal
+        # S**2 = sqrt( 2*qe*ENF*(S+dark)*BW + i_amp*BW)
+        # S**2 - K*S - K*dark - i_amp = 0 with K = 2*qe*ENF*BW
+        # S = (K + sqrt(K**2 + 4*(K*dark+i_amp))) / 2
+        K = 2*qe*self.excess_noise_factor*self.bandwidth
+        signal = (K + np.sqrt(K**2 + 4*(K*self.dark_current+self.amp_noise_density))) / 2
+        NEP = signal/(self.gain*self.responsivity) / np.sqrt(self.bandwidth)
+        return NEP
     
     def signal(self,optical_power):
         return self.gain*self.responsivity*optical_power
     
     def noise(self,optical_power):
-        return np.sqrt(2*qe*self.excess_noise_factor*(self.signal(optical_power)+self.dark_current)*self.bandwidth)
+        APD_shot_noise = np.sqrt(2*qe*self.excess_noise_factor*(self.signal(optical_power)+self.dark_current)*self.bandwidth)
+        amplifier_noise = self.amp_noise_density*np.sqrt(self.bandwidth)
+        return np.sqrt(APD_shot_noise**2 + amplifier_noise**2)
+
         
     def SNR(self,optical_power):
-        #Defined as (I/In)**2
-        return (self.signal(optical_power)/self.noise(optical_power))**2
+        #Defined as I/In, In is the noise variance
+        return self.signal(optical_power)/self.noise(optical_power)
+    
+    def supportedBandwidth(self,optical_power,required_SNR):
+        # Noise RMS is Signal / SNR
+        supported_noise = self.signal(optical_power)/required_SNR
+        # Re-arange Photodiode.noise
+        supported_bandwidth = supported_noise**2 / (2*qe*self.excess_noise_factor*(self.signal(optical_power)+self.dark_current) + self.amp_noise_density**2)
+        return supported_bandwidth
         
 def BER_OOK(SNR):
-    return 0.5*scsp.erfc(np.sqrt(SNR)/(2*np.sqrt(2)))
+    # With SNR defined as I/In
+    # signal total amplituide is I, and variance of both 0 and 1 is asumed to In
+    # Optimal thresholding, at 0 with both normal distribution at +/- I/2
+    # 0 and 1 CDF(x): 0.5 * [1+ERF( (x +/- I/2)/(sqrt(2)*In) )]
+    # BER = P(1)*P(0|1) + P(0)*P(1|0) = P(0|1) = 2*CDF(0)
+    # BER = 0.5*[1+ERF( (-I/2)/(sqrt(2)*In) )]
+    # BER = 0.5*[1-ERF( I/(In*2*sqrt(2)) )]
+    # BER = 0.5*[ERFC( (I/In)/(2*sqrt(2)) )]
+    return 0.5*scsp.erfc(SNR/(2*np.sqrt(2)))
+
+def SNR_from_BER_OOK(BER):
+    # With SNR defined as I/In
+    # Inverse of BER_OOK
+    # 2*BER = ERFC( (I/In)/(2*sqrt(2)) )
+    # ERFCinv(2*BER) = (I/In)/(2*sqrt(2))
+    # I/In = ERFCinv(2*BER)*2*sqrt(2)
+    return scsp.erfcinv(2*BER)*2*np.sqrt(2)
     
 def BER_OOK_integrated(SNR,PDF):
     BER = BER_OOK(SNR)
@@ -588,10 +610,20 @@ def BER_OOK_integrated(SNR,PDF):
     return np.sum(PDF*BER, axis = 0) + BER_out_of_pdf
 
 def suported_bandwidth_OOK(pd:Photodiode,optical_power,BER):
-    sqrt_required_SNR = 2*np.sqrt(2)*scsp.erfcinv(2*BER)
-    supported_noise = pd.signal(optical_power)/sqrt_required_SNR
-    supported_bandwidth = supported_noise**2 / (2*qe*pd.excess_noise_factor*(pd.signal(optical_power)+pd.dark_current) )
+
+    #Inverse of BER_OOK:
+    required_SNR = SNR_from_BER_OOK(BER)
+
+    supported_bandwidth = pd.supportedBandwidth(optical_power,required_SNR)
+
     return supported_bandwidth
+
+
+# =====================================================================================================
+# Check against other link budget
+# =====================================================================================================
+
+
 
 # =====================================================================================================
 # deprecated
