@@ -35,10 +35,11 @@ class Report:
         '''      
         script_file = sys.argv[0]
         scrict_name = os.path.basename(script_file)
+        script_path = os.path.dirname(script_file)
 
         try:
             import git
-            repo = git.Repo('../.')
+            repo = git.Repo(script_path)
         except:
             git_string = ''
         else:
@@ -47,7 +48,6 @@ class Report:
             if scrict_name   in repo.untracked_files: file_status = 'file is not tracked'
             elif scrict_name in changed: file_status = 'file changed'
             else: scrict_name = ''
-            print(changed)
             if repo.is_dirty(untracked_files=True): file_status += ', repos is dirty'
             git_string = '<br>Git: %s, %s' % (commit_hash,file_status)
                 
@@ -71,6 +71,18 @@ class Report:
     def AsHtmlPage(self, html_file_name='link_budget.html'):
         html_rep = self.HtmlString()
         with open(html_file_name,'w') as html_file: html_file.write(html_rep)
+
+    def FormatSI(self, value:float):
+        value_range =  [1e0,1e3,1e6,1e9,1e12]
+        prefix = ['m', '', 'K', 'M', 'G', 'T']
+
+        index = 0
+        while value > value_range[index]: index+=1
+        value = value / value_range[index-1]
+        prefix[index]
+
+        return f'{value:.4g} {prefix[index]}'
+
 
 
 class Table:
@@ -162,9 +174,10 @@ class CapacityVsRange(Report):
         
         def copy(self) -> 'CapacityVsRange.InputsCase': return dataclasses.replace(self)
 
-    def __init__(self,cases:list[InputsCase] = [], **karg):
+    def __init__(self,cases:list[InputsCase] = [], n_points=1000, **karg):
         super().__init__(**karg)
         self.cases = cases
+        self.n_points = n_points
 
     def AddCase(self, case:InputsCase):
         self.cases.append(case)
@@ -219,7 +232,7 @@ class CapacityVsRange(Report):
         self.ConcatenateCases()
         
         # Log scale link ranges vector
-        if not ranges: link_range = np.logspace(np.log10(self.range_start),np.log10(self.range_end),100)
+        if not ranges: link_range = np.logspace(np.log10(self.range_start),np.log10(self.range_end),self.n_points)
         else: link_range = np.array(ranges)[:,np.newaxis]
 
         # Position error at receiver
@@ -252,8 +265,6 @@ class CapacityVsRange(Report):
         # Estimate required bandwidth for givien BER
         detector_bw = olb.suported_bandwidth_OOK(pd,P_rx_avg,self.target_BER)
 
-        print(detector_bw[:,0]/detector_bw[:,1])
-
         # Supported bandwidth is at most hardware bandwidth
         detector_bw = np.minimum(detector_bw, self.APD_bandwidth)
 
@@ -274,7 +285,7 @@ class CapacityVsRange(Report):
             index +=1
         if index > 1: ax.legend()
         ax.set_xlabel('Link range, km')
-        ax.set_ylabel('Capacity, Mbps')
+        ax.set_ylabel('Throughput, Mbps')
 
         return fig, ax
 
@@ -289,8 +300,9 @@ class CapacityVsRange(Report):
 
         range_index = 0
         for range in link_ranges:
-            sample_list += [[f'{range*1e-3:,.2f} km'] + [f'{dt*1e-6:,.1f} Mbps' for dt in datarate[range_index,:]]]
+            sample_list += [[f'{range*1e-3:,.2f} km'] + [f'{self.FormatSI(dt)}bps' for dt in datarate[range_index,:]]]
             range_index += 1
+
 
         self.AddHtml(Table(sample_list).Html())
 

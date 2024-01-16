@@ -558,10 +558,10 @@ class Photodiode:
         """Find estimated NEP based on shot noise and dark current alone"""
         # We want to solve S (signal) for SNR = 1, noise = signal
         # S**2 = 2*qe*ENF*(S+dark)*BW + i_amp**2*BW
-        # S**2 - K*S - K*dark - i_amp**2 = 0 with K = 2*qe*ENF*BW
-        # S = (K + sqrt(K**2 + 4*(K*dark+i_amp**2))) / 2
+        # S**2 - K*S - K*dark - i_amp**2*BW = 0 with K = 2*qe*ENF*BW
+        # S = (K + sqrt(K**2 + 4*(K*dark+i_amp**2*BW))) / 2
         K = 2*qe*self.excess_noise_factor*self.bandwidth
-        signal = (K + np.sqrt(K**2 + 4*(K*self.dark_current+self.amp_noise_density**2))) / 2
+        signal = (K + np.sqrt(K**2 + 4*(K*self.dark_current+self.amp_noise_density**2*self.bandwidth))) / 2
         NEP = signal/(self.gain*self.responsivity) / np.sqrt(self.bandwidth)
         return NEP
     
