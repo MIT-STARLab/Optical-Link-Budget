@@ -9,8 +9,6 @@ The Software is provided “as is”, without warranty of any kind, express or i
 
 #----------------------------------------------------------
 # Imports
-import inspect
-from functools import wraps
 from dataclasses import dataclass
 
 import numpy as np
@@ -68,6 +66,13 @@ def beam_radius(W_0,G_Theta,G_Lambda):
     
 def apply_min(x):
     return x #(x>min_log)*x + (x<=min_log)*min_log
+
+def filter_maximum(wi, wc, n):
+    # Smooth maximum based on the transfer function of order n butterworth filter 
+    w = wi/wc
+    ratio = 1 / np.sqrt(1 + w**(2*n))
+    if n == 1: return wi*ratio
+    else: return wi*ratio + wc*(1-ratio)
     
 #----------------------------------------------------------
 # Link Geometry

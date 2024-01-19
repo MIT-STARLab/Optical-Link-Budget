@@ -268,13 +268,7 @@ class CapacityVsRange(Report):
         detector_bw = olb.suported_bandwidth_OOK(pd,P_rx_avg,self.target_BER)
 
         # Supported bandwidth is at most hardware bandwidth
-        # soft maximum using order 2 system (butterworth)
-        # detector_bw = np.minimum(detector_bw, self.APD_bandwidth)
-        def filter(wi, wc, n):
-            w = wi/wc
-            ratio = 1 / np.sqrt(1 + w**(2*n))
-            return wi*ratio #+ wc*(1-ratio)
-        detector_bw = filter(detector_bw, self.APD_bandwidth, 1)
+        detector_bw = olb.filter_maximum(detector_bw, self.APD_bandwidth, 1)
 
         # Data is up to 2 time faster than bandwidth
         datarate = self.datarate_to_BW*detector_bw
