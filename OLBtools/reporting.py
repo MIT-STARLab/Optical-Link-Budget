@@ -19,14 +19,14 @@ class Report:
     def AddHtml(self, html):
         self.body += '<p>' + html + '</p>'
 
-    def AddFigure(self, fig:Figure): 
+    def AddFigure(self, fig:Figure, alt_text:str=''): 
         ''' Save the current figure as a base64 embeded in html'''
         image_string = io.BytesIO()
         fig.savefig(image_string, format='jpg')
         image_string.seek(0)
         image_base64 = base64.b64encode(image_string.read()).decode()
 
-        self.AddHtml('<img src="data:image/png;base64,%s", alt="Red dot"/>' % image_base64)
+        self.AddHtml('<img src="data:image/png;base64,%s", alt="%s"/>' % (image_base64,alt_text))
 
     def HtmlString(self):
 
@@ -205,7 +205,22 @@ class CapacityVsRange(Report):
             'Throughput to Bandwidth ratio',
         ]
 
-        param_list = zip(NAME_LIST, *[case.textList() for case in self.cases])
+        param_list = list(zip(NAME_LIST, *[case.textList() for case in self.cases]))
+
+        losses = {}
+
+        for case_index in range(len(self.cases)):
+
+            case = self.cases[case_index]
+
+            for loss_name, loss_value in case.db_losses:
+
+                if not loss_name in losses: losses[loss_name] = [0]*len(self.cases)
+                
+                losses[loss_name][case_index] = loss_value
+
+        param_list += [[key]+[f'{v:.1f} dB' for v in vals] for key, vals in losses.items()]
+            
 
         return Table(param_list, colapse_identical_row=1)
     
