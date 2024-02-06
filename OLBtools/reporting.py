@@ -262,7 +262,7 @@ class CapacityVsRange(Report):
         k = olb.angular_wave_number(self.wavelength)
 
         # Range loss for a gaussian beam
-        range_loss = olb.path_loss_gaussian(W_0, self.wavelength, link_range, self.receive_diameter, self.pointing_error, self.M2_factor)
+        range_loss = olb.path_loss_gaussian(W_0, self.wavelength, link_range, self.receive_diameter, r, self.M2_factor)
 
         # Addingup all losses
         all_losses = range_loss-self.db_losses

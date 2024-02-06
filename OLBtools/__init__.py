@@ -42,8 +42,14 @@ def radians(a): return a*np.pi/180
 
 def fwhw_to_radius1e2(fwhm):
     return fwhm/np.sqrt(2*np.log(2))
+def fwhw_to_diam1e2(fwhm):
+    return 2*fwhm/np.sqrt(2*np.log(2))
+def radius1e2_to_fwhw(radius1e2):
+    return np.sqrt(2*np.log(2))*radius1e2
 def diam1e2_to_fwhw(diam1e2):
-    return np.sqrt(2*np.log(2))*diam1e2
+    import warnings
+    warnings.warn("Was incorrect", UserWarning)
+    return np.sqrt(2*np.log(2))*diam1e2/2
 
 def angular_wave_number(vlambda):return 2*np.pi/vlambda
 
@@ -258,7 +264,7 @@ def path_loss_gaussian(beam_radius, wavelength, distance, rx_diameter, pointing_
     path_loss_dB = 10*np.log10(rx_power) # [dB]
     return path_loss_dB
     
-def fwhm_to_radius(fwhm, wavelength):
+def fwhm_divergence_to_1e2_beam_radius(fwhm, wavelength):
     # From Matlab linkbudget, author O cierny
     '''Calculates the 1/e^2 Gaussian beam radius given the full width half
     maximum angle.
@@ -266,11 +272,22 @@ def fwhm_to_radius(fwhm, wavelength):
     beam_radius: 1/e^2 beam radius at origin [m]'''
     beam_radius = (wavelength * np.sqrt(2*np.log(2))) / (np.pi * fwhm)
     return beam_radius
+
+def fwhm_to_radius(fwhm, wavelength):
+    import warnings
+    warnings.warn("deprecated", DeprecationWarning)
+    return fwhm_divergence_to_1e2_beam_radius(fwhm, wavelength)
+
     
-def divergence_to_radius(divergence_1e2:np.ndarray, wavelength) -> np.ndarray:
+def half_1e2_divergence_to_1e2_beam_radius(divergence_1e2:np.ndarray, wavelength) -> np.ndarray:
     '''Calculates the 1/e^2 Gaussian beam radius given the 1e2 half-angle'''
     beam_radius = wavelength  / (np.pi * divergence_1e2)
     return beam_radius
+
+def divergence_to_radius(divergence_1e2:np.ndarray, wavelength) -> np.ndarray:
+    import warnings
+    warnings.warn("deprecated", DeprecationWarning)
+    return half_1e2_divergence_to_1e2_beam_radius(divergence_1e2, wavelength)
 
 #----------------------------------------------------------
 # LOWTRAN functions
@@ -343,6 +360,7 @@ class Quadcell:
     responsivity:float=0.9
     transimpedance:float=1e6
     amplifier_noise:float=1e-5
+    bandwidth:float=100.0
 
     def __post_init__(self):
         #Quadrants defined as A,B,C,D, in trigonometric order, in quadcell front view.
@@ -359,18 +377,23 @@ class Quadcell:
         coef = np.sqrt(2)/W
         return 0.25*(scsp.erf(coef*x2)-scsp.erf(coef*x1))*(scsp.erf(coef*y2)-scsp.erf(coef*y1))
         
-    def cumulated_gaussian_PSF_on_quadrant_mask(W,x1,y1):
+    def cumulated_gaussian_PSF_on_quadrant_mask(W,x1,y1,dx,dy):
         #W: spot size for the PSF, such as PSF(r) = 2/(pi*W**2)*exp(-2*r**2/w**2)
         coef = np.sqrt(2)/W
-        return 0.25*(1-scsp.erf(coef*x1))*(1-scsp.erf(coef*y1))
+        if dx == 1: cx = 2*np.exp(-(coef*x1)**2)/np.sqrt(np.pi)
+        else:       cx = 1-scsp.erf(coef*x1)
+        if dy == 1: cy = 2*np.exp(-(coef*y1)**2)/np.sqrt(np.pi)
+        else:       cy = 1-scsp.erf(coef*y1)
+        return 0.25*cx*cy
         
     def set_PSF_gaussian(self,W):
         #W: spot size for the PSF, such as PSF(r) = 2/(pi*W**2)*exp(-2*r**2/w**2)
         
-        def culative_sum_function(x,y):            
+        def culative_sum_function(x,y,dx,dy,grid=False):    
+            assert not grid       
             x_shifted = self.gap/2-x
             y_shifted = self.gap/2-y
-            return Quadcell.cumulated_gaussian_PSF_on_quadrant_mask(W,x_shifted,y_shifted)
+            return Quadcell.cumulated_gaussian_PSF_on_quadrant_mask(W,x_shifted,y_shifted,dx,dy)
             
         self.set_all_quadrant_sum(culative_sum_function)
         
@@ -399,9 +422,20 @@ class Quadcell:
         
         v_integ = np.cumsum(np.cumsum(v,axis=0),axis=1)*(2*rf/n_int2d)**2
 
-        v_integ_lookup = scit.RectBivariateSpline(x-self.gap/2,y-self.gap/2,v_integ,kx=deg,ky=deg)
+        v_integ_lookup = scit.RectBivariateSpline(x+self.gap/2,y+self.gap/2,v_integ,kx=deg,ky=deg)
 
-        self.set_all_quadrant_sum(v_integ_lookup)
+        def lookup_function(x,y,dx,dy,sx,sy,grid=False):
+            if dx==0 and dy==0: 
+                return np.maximum( v_integ_lookup(x*sx, y*sy, 0,0, grid=False), 0)
+            elif dx==1:
+                return sx*v_integ_lookup(x*sx, y*sy, 1,0, grid=False)
+            elif dy==1:
+                return sy*v_integ_lookup(x*sx, y*sy, 0,1, grid=False)
+
+        self.PSF_sum_2D_A = lambda x,y,dx=0,dy=0:lookup_function(x,y,dx,dy, 1, 1,grid=False)
+        self.PSF_sum_2D_B = lambda x,y,dx=0,dy=0:lookup_function(x,y,dx,dy,-1, 1,grid=False)
+        self.PSF_sum_2D_C = lambda x,y,dx=0,dy=0:lookup_function(x,y,dx,dy,-1,-1,grid=False)
+        self.PSF_sum_2D_D = lambda x,y,dx=0,dy=0:lookup_function(x,y,dx,dy, 1,-1,grid=False)
         
     def set_all_quadrant_sum(self,sum_function):
         # Set all quadrant if the PSF is axi-sytmetrical.
@@ -475,15 +509,8 @@ class Quadcell:
         A,B,C,D = quadrants
         A_da,B_da,C_da,D_da = quadrants_da
         quad_sum = A+B+C+D
-        quad_sum_da = A_da+B_da+C_da+D_da
-        
-        x_resp_num = (A+D)-(B+C)
-        x_resp_num_da = (A_da+D_da)-(B_da+C_da)
-        y_resp_num = (A+B)-(C+D)
-        y_resp_num_da = (A_da+B_da)-(C_da+D_da)
-        
-        x_resp_da = (quad_sum*x_resp_num_da - x_resp_num*quad_sum_da)/quad_sum**2
-        y_resp_da = (quad_sum*y_resp_num_da - y_resp_num*quad_sum_da)/quad_sum**2
+        x_resp_da = (2*(B+C)*(A_da+D_da) - 2*(A+D)*(B_da+C_da))/quad_sum**2
+        y_resp_da = (2*(D+C)*(A_da+B_da) - 2*(A+B)*(D_da+C_da))/quad_sum**2
         
         return x_resp_da,y_resp_da
         
@@ -502,9 +529,9 @@ class Quadcell:
         x_resp_dx,x_resp_dy,y_resp_dx,y_resp_dy = self.slope(x_spot,y_spot)
         
         x_angle = magnification*np.arctan2(x_spot,focal_lenght)
-        y_angle = magnification*np.arctan2(x_spot,focal_lenght)
+        y_angle = magnification*np.arctan2(y_spot,focal_lenght)
         
-        x_resp_dx = x_resp_dx/x_spot*x_angle
+        x_resp_dx = x_resp_dx/x_spot*x_angle # Has issues when x_angle=0.
         x_resp_dy = x_resp_dy/x_spot*x_angle
         y_resp_dx = y_resp_dx/y_spot*y_angle
         y_resp_dy = y_resp_dy/y_spot*y_angle
@@ -522,12 +549,8 @@ class Quadcell:
         all_quadrants = np.stack((A,B,C,D))
         
         all_power = all_quadrants*optical_power
-        print('power',all_power[0][750][750])
         all_current = all_power*self.responsivity
-        #print('Rqc',self.responsivity)
-        #print('current',all_current[0][750][750])
         all_voltage = all_current*self.transimpedance
-        #print('volts',all_voltage[0][750][750])
         all_shot_noise = self.transimpedance*np.sqrt(2*qe*all_current*self.bandwidth)
         all_amp_noise = self.amplifier_noise*np.sqrt(self.bandwidth)
         all_noise = np.sqrt(all_shot_noise**2+all_amp_noise**2)
@@ -539,11 +562,12 @@ class Quadcell:
         return SNR
         
     def NEA(self,x_spot,y_spot,optical_power,focal_lenght,magnification=1):
-        slopes = self.angular_slope(x_spot,y_spot,focal_lenght,magnification)
-        slope = np.sqrt(sum([s**2 for s in slopes]))
+
+        dx_dax, dx_day, dy_dax, dy_day = self.angular_slope(x_spot,y_spot,focal_lenght,magnification)
+
         SNR = self.SNR(x_spot,y_spot,optical_power)
         
-        NEA = 1/SNR/slope
+        NEA = np.sqrt(1/dx_dax**2 + 1/dy_day**2)/SNR
         return NEA
     
 @dataclass
