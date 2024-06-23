@@ -263,6 +263,16 @@ def path_loss_gaussian(beam_radius, wavelength, distance, rx_diameter, pointing_
     # Calculate dB loss
     path_loss_dB = 10*np.log10(rx_power) # [dB]
     return path_loss_dB
+
+def gaussian_beam_encircled_ratio(tx_radius, wavelength, distance, rx_radius, M2=1.0):
+    # Calculate beam waist at the given distance due to diffraction [m]
+    rx_radius_prop = tx_radius * np.sqrt(1 + ((M2*wavelength*distance)/(np.pi*tx_radius**2))**2)
+    
+    # beam cut-off ratio
+    c = rx_radius / rx_radius_prop
+
+    ratio = (1-np.exp(-2*c**2))
+    return ratio
     
 def fwhm_divergence_to_1e2_beam_radius(fwhm, wavelength):
     # From Matlab linkbudget, author O cierny
