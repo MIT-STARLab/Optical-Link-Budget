@@ -548,7 +548,7 @@ class Quadcell:
         
         return x_resp_dx,x_resp_dy,y_resp_dx,y_resp_dy
         
-    def SNR(self,x_spot,y_spot,optical_power):
+    def SNR(self,x_spot,y_spot,optical_power,modulation_depth=1.0):
         ''' Return the quacel signal SNR
         x_spot, y_spot: postion of the spot on the quadcell in m or PSF postition units
         optical_power: total spot power, W
@@ -565,17 +565,17 @@ class Quadcell:
         all_amp_noise = self.amplifier_noise*np.sqrt(self.bandwidth)
         all_noise = np.sqrt(all_shot_noise**2+all_amp_noise**2)
         
-        signal = sum([all_voltage[i,:,:] for i in range(4)])
+        signal = sum([all_voltage[i,:,:]*modulation_depth for i in range(4)])
         noise = np.sqrt(sum([all_noise[i,:,:]**2 for i in range(4)]))
         SNR = signal / noise
         
         return SNR
         
-    def NEA(self,x_spot,y_spot,optical_power,focal_lenght,magnification=1):
+    def NEA(self,x_spot,y_spot,optical_power,focal_lenght,magnification=1,modulation_depth=1.0):
 
         dx_dax, dx_day, dy_dax, dy_day = self.angular_slope(x_spot,y_spot,focal_lenght,magnification)
 
-        SNR = self.SNR(x_spot,y_spot,optical_power)
+        SNR = self.SNR(x_spot,y_spot,optical_power,modulation_depth)
         
         NEA = np.sqrt(1/dx_dax**2 + 1/dy_day**2)/SNR
         return NEA
