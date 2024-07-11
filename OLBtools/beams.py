@@ -1,5 +1,4 @@
 import numpy as np
-from numpy.lib.function_base import meshgrid
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpt
@@ -9,12 +8,16 @@ import matplotlib.patches as mpt
 
 def half1e2_to_FWHM(half1e2:np.ndarray) -> np.ndarray:
     '''Convert a half angle or radius to a FWHM matching quantity'''
-    FWHM = half1e2*2*np.sqrt(2*np.log(2))
+    import warnings
+    warnings.warn("Was incorrect", UserWarning)
+    FWHM = half1e2*np.sqrt(2*np.log(2))
     return FWHM
 
 def FWHM_to_half1e2(FWHM:np.ndarray) -> np.ndarray:
     '''Convert a FWHM quantity to a matching half angle or radius'''
-    half1e2 = FWHM/(2*np.sqrt(2*np.log(2)))
+    import warnings
+    warnings.warn("Was incorrect", UserWarning)
+    half1e2 = FWHM/np.sqrt(2*np.log(2))
     return half1e2
 
 def W0_to_radius1e2(W0:np.ndarray) -> np.ndarray:
@@ -192,7 +195,7 @@ def fit_2d_gaussian(I:np.ndarray, x:np.ndarray, y:np.ndarray, threshold:float=No
     ymask = np.array([0, 2, 1, 0, 1, 0])
     xmask = xmask[np.newaxis,:] + xmask[:,np.newaxis]
     ymask = ymask[np.newaxis,:] + ymask[:,np.newaxis]
-    xx, yy = meshgrid(range(6),range(6))
+    xx, yy = np.meshgrid(range(6),range(6))
     xx = xx.ravel()
     yy = yy.ravel()
     
