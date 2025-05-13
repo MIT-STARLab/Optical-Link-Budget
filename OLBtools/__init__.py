@@ -537,15 +537,20 @@ class Quadcell:
         
     def angular_slope(self,x_spot,y_spot,focal_lenght,magnification=1):
         x_resp_dx,x_resp_dy,y_resp_dx,y_resp_dy = self.slope(x_spot,y_spot)
+
+        # we need x/arctan(x/y, witch has issue for x=0)\
+        # Use series expension arround zero, we don't need a quadcell with large angles:
+        def x_over_atanxy(x,y):
+            return y + x**2/(3*y) - 4*x**4/(45*y**3)
         
-        x_angle = np.arctan2(x_spot,focal_lenght)/magnification
-        y_angle = np.arctan2(y_spot,focal_lenght)/magnification
+        x_angle = x_over_atanxy(x_spot, focal_lenght)*magnification
+        y_angle = x_over_atanxy(y_spot, focal_lenght)*magnification
         
-        x_resp_dx = x_resp_dx*x_spot/x_angle # Has issues when x_angle=0.
-        x_resp_dy = x_resp_dy*x_spot/x_angle
-        y_resp_dx = y_resp_dx*y_spot/y_angle
-        y_resp_dy = y_resp_dy*y_spot/y_angle
-        
+        x_resp_dx = x_resp_dx*x_angle
+        x_resp_dy = x_resp_dy*x_angle
+        y_resp_dx = y_resp_dx*y_angle
+        y_resp_dy = y_resp_dy*y_angle
+
         return x_resp_dx,x_resp_dy,y_resp_dx,y_resp_dy
         
     def SNR(self,x_spot,y_spot,optical_power,modulation_depth=1.0):
