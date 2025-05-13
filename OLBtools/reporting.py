@@ -2,7 +2,7 @@ import datetime
 import sys
 import os
 import numpy as np
-from .. import OLBtools as olb
+import OLBtools as olb # this is weird but i'm not gonna update the whole script
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 import matplotlib.pyplot as plt
