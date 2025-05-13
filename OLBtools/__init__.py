@@ -538,13 +538,13 @@ class Quadcell:
     def angular_slope(self,x_spot,y_spot,focal_lenght,magnification=1):
         x_resp_dx,x_resp_dy,y_resp_dx,y_resp_dy = self.slope(x_spot,y_spot)
         
-        x_angle = magnification*np.arctan2(x_spot,focal_lenght)
-        y_angle = magnification*np.arctan2(y_spot,focal_lenght)
+        x_angle = np.arctan2(x_spot,focal_lenght)/magnification
+        y_angle = np.arctan2(y_spot,focal_lenght)/magnification
         
-        x_resp_dx = x_resp_dx/x_spot*x_angle # Has issues when x_angle=0.
-        x_resp_dy = x_resp_dy/x_spot*x_angle
-        y_resp_dx = y_resp_dx/y_spot*y_angle
-        y_resp_dy = y_resp_dy/y_spot*y_angle
+        x_resp_dx = x_resp_dx*x_spot/x_angle # Has issues when x_angle=0.
+        x_resp_dy = x_resp_dy*x_spot/x_angle
+        y_resp_dx = y_resp_dx*y_spot/y_angle
+        y_resp_dy = y_resp_dy*y_spot/y_angle
         
         return x_resp_dx,x_resp_dy,y_resp_dx,y_resp_dy
         
