@@ -42,21 +42,110 @@ def Cn2_HV_best(h):
 def Cn2_HV_worst(h):
     # HV57 worst (x10)
     return 10*Cn2_HV_57(h)
-    
+
+def _bufton_wind_ITU_R_P_1621_2(h, v_g):
+    # ITU-R P.1621-2 section 5.1.4, equation (19).
+    return v_g + 30 * np.exp(-((h - 12448) / 4800)**2)
+
+
+def Cn2_ITU_R_P_1621_2(h, v_g=2.3, C0=1.7e-14, *, slew_rate=0.0):
+    """Return Cn2 in m^(-2/3) using ITU-R P.1621-2 section 5.1.1.
+
+    h is height above ground in metres, v_g is ground wind speed in m/s,
+    and C0 is the nominal ground-level turbulence in m^(-2/3).
+    slew_rate is the apparent satellite tracking rate in rad/s. For the
+    optional vertical-path approximation, add abs(slew_rate) * h to the
+    wind speed before averaging its square from 5 to 20 km.
+    """
+    h = np.asarray(h, dtype=float)
+    v_g = np.asarray(v_g, dtype=float)
+    slew_rate = np.abs(slew_rate)
+    v_rms_squared = v_g**2 + 33.11 * v_g + 360.31
+
+    if np.any(slew_rate):
+        rms_heights = np.linspace(5000, 20000, 257)
+        wind = _bufton_wind_ITU_R_P_1621_2(rms_heights, v_g[..., np.newaxis])
+        slew_wind = slew_rate[..., np.newaxis] * rms_heights
+        # Add the change in the mean square to the published zero-slew value.
+        increment = slew_wind * (2 * wind + slew_wind)
+        v_rms_squared = v_rms_squared + scin.simpson(increment, x=rms_heights) / 15000
+
+    return (
+        8.148e-56 * v_rms_squared * h**10 * np.exp(-h / 1000)
+        + 2.7e-16 * np.exp(-h / 1500)
+        + C0 * np.exp(-h / 100)
+    )
+
+
+def critical_time_ITU_R_P_1621_2(
+    wavelength, elevation, h_0=0.0, Z=20e3, *, v_g=2.3, C0=1.7e-14,
+    slew_rate=0.0, Cn2=None, wind_profile=None, n_int=1000,
+):
+    """Return the critical time in seconds using ITU-R P.1621-2 section 5.1.4.
+
+    wavelength is in metres. elevation is in radians, with the ITU method
+    specified for elevations above 45 degrees. h_0 and Z are the station
+    height and upper turbulence limit in metres above ground.
+
+    Cn2 and wind_profile are optional callables of height above ground, in
+    metres, returning Cn2 in m^(-2/3) and wind speed in m/s, respectively.
+    The defaults use the atmospheric ITU profiles with v_g in m/s and C0
+    in m^(-2/3). The magnitude of slew_rate in rad/s adds an apparent
+    crosswind to the wind profile using the flat-Earth slant distance.
+    n_int is the number of vertical integration samples.
+    """
+    elevation, h_0, Z, v_g, C0, slew_rate = np.broadcast_arrays(
+        elevation, h_0, Z, v_g, C0, slew_rate,
+    )
+    sin_elevation = np.sin(elevation)
+    h = np.linspace(h_0, Z, n_int, axis=-1)
+    if Cn2 is None:
+        turbulence = Cn2_ITU_R_P_1621_2(h, v_g[..., np.newaxis], C0[..., np.newaxis])
+    else:
+        turbulence = Cn2(h)
+    if wind_profile is None:
+        wind = _bufton_wind_ITU_R_P_1621_2(h, v_g[..., np.newaxis])
+    else:
+        wind = wind_profile(h)
+
+    slant_distance = (h - h_0[..., np.newaxis]) / sin_elevation[..., np.newaxis]
+    wind = wind + np.abs(slew_rate[..., np.newaxis]) * slant_distance
+    weighted_turbulence = scin.simpson(turbulence * wind**(5 / 3), x=h, axis=-1)
+    wavelength_um = np.asarray(wavelength) * 1e6
+    with np.errstate(divide="ignore"):
+        return 2.729e-8 * wavelength_um**1.2 * sin_elevation**0.6 / weighted_turbulence**0.6
+
+
 #----------------------------------------------------------
+
+def _integration_range(h_0, integration_mode, n_int):
+    '''h_0: ground sation altitude
+    H: target altitude
+    integration_mode: 'linear', 'exponential', or 'ITU'. ITU is per ITU-R P1.1621-2 in 5.1.1.
+    n_int: number of integration point'''
+    if integration_mode == 'linear':      h = np.linspace(h_0,np.minimum(H,20e3),n_int,axis=-1)
+    if integration_mode == 'exponential': raise NotImplementedError
+    if integration_mode == 'ITU':
+        i = np.linspace(h/h,139,139,axis=-1)
+        h_i = np.exp(i - 1 / 20e3)
+        h = h_0 + np.cumsum(h_i,axis=-1)
+
+    np.logspace(start=h_0, stop=np.log(np.minimum(H,20e3)), num=n_int, base=np.e ,axis=-1)
     
 def Rytov_var(Cn2_h,k,L):
     # Laser Beam Propagation through random Media, 2nd edition  Larry C. Andrews and Ronald L. Phillips page 140
     return 1.23*Cn2_h*k**(5/7)*L**(11/6)
     
-def Fried_param(zenith,k,Cn2,h_0,H,n_int=1000):
+def Fried_param(zenith,k,Cn2,h_0,H,integration_mode='linear',n_int=1000):
     '''Fried's pararamter for a ground station.
     Andrews Ch12, p492, Eq23
     zenith:  zenith angle in radians
     k: angular wave number
     Cn2: function of h
     h_0: ground sation altitude
-    H: target altitude'''
+    H: target altitude
+    integration_mode: 'linear', 'exponential', or 'ITU'. ITU is per ITU-R P1.1621-2 in 5.1.1.
+    n_int: number of integration point'''
     
     # Integration range
     h = np.linspace(h_0,np.minimum(H,20e3),n_int,axis=-1)
