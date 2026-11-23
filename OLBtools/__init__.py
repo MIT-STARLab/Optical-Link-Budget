@@ -299,6 +299,40 @@ def divergence_to_radius(divergence_1e2:np.ndarray, wavelength) -> np.ndarray:
     warnings.warn("deprecated", DeprecationWarning)
     return half_1e2_divergence_to_1e2_beam_radius(divergence_1e2, wavelength)
 
+# Dirk Giggenbach, Marcus T. Knopp, and Christian Fuchs (2023),
+# Int. J. Satell. Commun. Network., 41, 460-476, doi:10.1002/sat.1478,
+# Table 2 and Eq. (16).
+# Keys are wavelengths in nm. Values are linear zenith transmittance.
+# Favorable: 1 km station, midlatitude summer / continental clean.
+# Adverse: sea-level station, tropical / urban.
+GIGGENBACH_ZENITH_TRANSMITTANCE = {
+    800: {"favorable": 0.950, "adverse": 0.705},
+    1064: {"favorable": 0.977, "adverse": 0.814},
+    1550: {"favorable": 0.986, "adverse": 0.891},
+}
+
+
+def atmospheric_attenuation_simplified(elevation, zenith_transmittance):
+    """Return signed atmospheric attenuation in dB using Eq. (16).
+
+    elevation is in radians, above the horizon and up to pi/2.
+    zenith_transmittance is a linear power fraction between 0 and 1.
+    Both inputs may be broadcastable arrays. Zero transmittance gives
+    negative infinity. The flat-Earth model overestimates loss at very
+    low elevations. See GIGGENBACH_ZENITH_TRANSMITTANCE for Table 2 values.
+    """
+    elevation = np.asarray(elevation, dtype=float)
+    zenith_transmittance = np.asarray(zenith_transmittance, dtype=float)
+    if not np.all((0 < elevation) & (elevation <= np.pi / 2)):
+        raise ValueError("elevation must be in (0, pi/2] radians")
+    if not np.all((0 <= zenith_transmittance) & (zenith_transmittance <= 1)):
+        raise ValueError("zenith_transmittance must be in [0, 1]")
+
+    # Evaluate log10(Tz**(1/sin(elevation))) without underflow at low angles.
+    with np.errstate(divide="ignore"):
+        return 10 * np.log10(zenith_transmittance) / np.sin(elevation)
+
+
 #----------------------------------------------------------
 # LOWTRAN functions
 #----------------------------------------------------------
