@@ -621,9 +621,13 @@ class Quadcell:
     
 @dataclass
 class Photodiode:
-    '''Class for an APD detector
-    Uses dark current and excess noise factor to derive noise, and add NEP inquadrature if specified
-    '''
+    """Linear APD with unity-gain responsivity and output-current noise.
+
+    dark_current is the multiplied bulk dark current at the APD output.
+    surface_dark_current is the separate, unmultiplied dark current.
+    amp_noise_density is a one-sided current amplitude density in A/sqrt(Hz).
+    bandwidth is the electrical equivalent noise bandwidth in Hz.
+    """
    
     gain:float=1.0
     responsivity:float=0.9
@@ -631,72 +635,78 @@ class Photodiode:
     excess_noise_factor:float=1.0
     dark_current:float=0
     amp_noise_density:float=0
+    surface_dark_current:float=0
 
     def estimatedNEP(self):
-        """Find estimated NEP based on shot noise and dark current alone"""
-        # We want to solve S (signal) for SNR = 1, noise = signal
-        # S**2 = 2*qe*ENF*(S+dark)*BW + i_amp**2*BW
-        # S**2 - K*S - K*dark - i_amp**2*BW = 0 with K = 2*qe*ENF*BW
-        # S = (K + sqrt(K**2 + 4*(K*dark+i_amp**2*BW))) / 2
-        K = 2*qe*self.excess_noise_factor*self.bandwidth
-        signal = (K + np.sqrt(K**2 + 4*(K*self.dark_current+self.amp_noise_density**2*self.bandwidth))) / 2
-        NEP = signal/(self.gain*self.responsivity) / np.sqrt(self.bandwidth)
-        return NEP
+        """Return the optical power at amplitude SNR 1 divided by sqrt(Hz)."""
+        shot_coefficient = 2 * qe * self.gain * self.excess_noise_factor * self.bandwidth
+        dark_variance = self._noise_density_squared(0) * self.bandwidth
+        signal = (shot_coefficient + np.sqrt(shot_coefficient**2 + 4 * dark_variance)) / 2
+        return signal / (self.gain * self.responsivity * np.sqrt(self.bandwidth))
     
     def signal(self,optical_power):
         return self.gain*self.responsivity*optical_power
     
-    def noise(self,optical_power):
-        APD_shot_noise_squared = 2*qe*self.excess_noise_factor*(self.signal(optical_power)+self.dark_current)*self.bandwidth
-        amplifier_noise_squared = self.amp_noise_density**2*self.bandwidth
-        return np.sqrt(APD_shot_noise_squared + amplifier_noise_squared)
+    def _noise_density_squared(self, optical_power):
+        # Giggenbach (2022), doi:10.3390/s22176628. Express M^2 F times
+        # primary current as M F times the already multiplied output current.
+        multiplied = self.signal(optical_power) + self.dark_current
+        return (
+            2 * qe * (self.gain * self.excess_noise_factor * multiplied + self.surface_dark_current)
+            + self.amp_noise_density**2
+        )
 
-        
-    def SNR(self,optical_power):
-        #Defined as I/In, In is the noise variance
-        return self.signal(optical_power)/self.noise(optical_power)
-    
-    def supportedBandwidth(self,optical_power,required_SNR):
-        # Noise RMS is Signal / SNR
-        supported_noise = self.signal(optical_power)/required_SNR
-        # Re-arange Photodiode.noise
-        APD_shot_noise_density_squared = 2*qe*self.excess_noise_factor*(self.signal(optical_power)+self.dark_current)
-        amplifier_noise_density_squared = self.amp_noise_density**2
-        supported_bandwidth = supported_noise**2 / (APD_shot_noise_density_squared + amplifier_noise_density_squared)
-        return supported_bandwidth
+    def noise(self, optical_power):
+        """Return RMS output current noise in amperes at this optical level."""
+        return np.sqrt(self._noise_density_squared(optical_power) * self.bandwidth)
+
+    def SNR(self, optical_power):
+        """Return the linear amplitude ratio I_signal / sigma at this level."""
+        return self.signal(optical_power) / self.noise(optical_power)
+
+    def ook_q(self, on_power, off_power=0):
+        """Return OOK Q = (I_on - I_off)/(sigma_on + sigma_off)."""
+        swing = self.signal(on_power) - self.signal(off_power)
+        noise_sum = self.noise(on_power) + self.noise(off_power)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(swing == 0, 0, swing / noise_sum)
+
+    def supportedBandwidth(self, optical_power, required_SNR):
+        """Invert the single-level amplitude SNR for bandwidth in Hz."""
+        supported_noise = self.signal(optical_power) / required_SNR
+        return supported_noise**2 / self._noise_density_squared(optical_power)
         
 def BER_OOK(SNR):
-    # With SNR defined as I/In
-    # signal total amplituide is I, and variance of both 0 and 1 is asumed to In
-    # Optimal thresholding, at 0 with both normal distribution at +/- I/2
-    # 0 and 1 CDF(x): 0.5 * [1+ERF( (x +/- I/2)/(sqrt(2)*In) )]
-    # BER = P(1)*P(0|1) + P(0)*P(1|0) = P(0|1) = 2*CDF(0)
-    # BER = 0.5*[1+ERF( (-I/2)/(sqrt(2)*In) )]
-    # BER = 0.5*[1-ERF( I/(In*2*sqrt(2)) )]
-    # BER = 0.5*[ERFC( (I/In)/(2*sqrt(2)) )]
+    """Return Gaussian OOK BER for SNR = 2*Q on a linear amplitude scale.
+
+    With equal RMS noise on both symbols, SNR is the current swing divided
+    by that RMS noise. With unequal noise, use 2*Photodiode.ook_q(...) for
+    the threshold that equalizes the two conditional error probabilities.
+    """
     return 0.5*scsp.erfc(SNR/(2*np.sqrt(2)))
 
 def SNR_from_BER_OOK(BER):
-    # With SNR defined as I/In
-    # Inverse of BER_OOK
-    # 2*BER = ERFC( (I/In)/(2*sqrt(2)) )
-    # ERFCinv(2*BER) = (I/In)/(2*sqrt(2))
-    # I/In = ERFCinv(2*BER)*2*sqrt(2)
+    """Invert BER_OOK to obtain the required linear amplitude ratio 2*Q."""
     return scsp.erfcinv(2*BER)*2*np.sqrt(2)
     
 def BER_OOK_integrated(SNR,PDF):
+    """Average BER over bin probability masses along axis 0.
+
+    SNR uses the BER_OOK amplitude convention. Missing probability mass
+    is assigned an error rate of one half.
+    """
     BER = BER_OOK(SNR)
     BER_out_of_pdf = 0.5*( 1- np.sum(PDF, axis = 0) )
     return np.sum(PDF*BER, axis = 0) + BER_out_of_pdf
 
-def suported_bandwidth_OOK(pd:Photodiode,optical_power,BER):
+def suported_bandwidth_OOK(pd: Photodiode, optical_power, BER):
+    """Return the electrical bandwidth for the target BER and zero off power.
 
-    #Inverse of BER_OOK:
-    required_SNR = SNR_from_BER_OOK(BER)
-
-    supported_bandwidth = pd.supportedBandwidth(optical_power,required_SNR)
-
-    return supported_bandwidth
+    optical_power is the on-state power. For balanced high-extinction OOK,
+    pass twice the time-averaged received power.
+    """
+    required_q = SNR_from_BER_OOK(BER) / 2
+    return pd.bandwidth * (pd.ook_q(optical_power) / required_q)**2
 
 
 # =====================================================================================================

@@ -613,10 +613,15 @@ def alpha_mu_inv_cdf(alpha,mu,r,I0,P):
     return It
     
 def alpha_mu_pdf(alpha,mu,r,I0,It):
-    lgmu = np.log(mu)
-    lgal = np.log(alpha)
-    lgP = np.log(It/I0/r)
-    return 1/I0*np.exp( lgal + mu*lgmu + (alpha*mu)*lgP - scsp.gammaln(mu) -mu*(It/I0/r)**alpha )
+    """Return the density corresponding to alpha_mu_cdf."""
+    scale = I0 * r
+    gain = np.asarray(It) / scale
+    with np.errstate(invalid="ignore"):
+        log_density = (
+            np.log(alpha / scale) + mu * np.log(mu) - scsp.gammaln(mu)
+            + scsp.xlogy(alpha * mu - 1, gain) - mu * gain**alpha
+        )
+    return np.where((gain < 0) | np.isposinf(gain), 0, np.exp(log_density))
     
 def alpha_mu_cdf_sum(alpha,mu,r,Pe,internal_scale,output_scale=None,cumulative=False):
 
@@ -653,35 +658,47 @@ def alpha_mu_cdf_sum(alpha,mu,r,Pe,internal_scale,output_scale=None,cumulative=F
 #def SNR0_APD(i_sig,sig_n):
 
 def SNR0_NEP(p_sig,NEP,BW):
+    """Linear amplitude ratio for a constant input-referred optical NEP."""
     return p_sig / (NEP*np.sqrt(BW))
 
 def SNR0_sig(i_sig,sig_n): return i_sig/sig_n
     
 def gamma_gamma_BER_NEP_single(sig2_x,sig2_y,Ie,NEP,BW):
+    """Average constant-noise OOK BER, with Ie the mean faded on-state power."""
+    if Ie == 0:
+        return 0.5
+    # Integrate over normalized irradiance so the result is independent
+    # of the optical power unit and includes narrow low-power tails.
+    snr_at_mean = SNR0_NEP(Ie, NEP, BW)
+    if np.isposinf(snr_at_mean):
+        return 0.0
+
+    gain_scale = min(1.0, 2 / snr_at_mean)
+
     def integrand(u):
-        return gamma_gamma_distrib_pdf(sig2_x,sig2_y,Ie,u)*scsp.erfc(SNR0_NEP(u,NEP,BW)*u/(2*np.sqrt(2)))
-    try:
-        return 0.5*scin.quad(integrand,0,np.inf)[0]
-    except ZeroDivisionError:
-        return 1   
+        gain = gain_scale * u
+        return gain_scale * gamma_gamma_distrib_pdf(sig2_x, sig2_y, 1.0, gain) * BER_OOK(snr_at_mean * gain)
+
+    return scin.quad(integrand, 0, np.inf, epsabs=0, epsrel=1e-8)[0]
 gamma_gamma_BER_NEP = np.frompyfunc(gamma_gamma_BER_NEP_single,5,1)        
     
 
 def alpha_mu_BER_NEP_single(alpha,mu,r,Ie,NEP,BW):
-    def integrand(u):
-        return alpha_mu_pdf(alpha,mu,r,Ie,u)*scsp.erfc(SNR0_NEP(u,NEP,BW)*u/(2*np.sqrt(2)))
-    try:
-        #return 0.5*scin.quad(integrand,0,1e10,points=[Ie])[0]
-        return 0.5*scin.quad(integrand,0,np.inf)[0]
-        #return 0.5*np.float(scin.romberg(integrand,0,100))
-    except ZeroDivisionError:
-        return 1
+    """Average constant-noise OOK BER, with Ie the mean faded on-state power."""
+    if Ie == 0:
+        return 0.5
+    noise = NEP * np.sqrt(BW)
+
+    def integrand(z):
+        # E[Q(P/(2*sigma))] = integral of F_P(2*sigma*z) times normal density.
+        cdf = scsp.gammainc(mu, mu * (2 * noise * z / (Ie * r))**alpha)
+        return cdf * np.exp(-z**2 / 2) / np.sqrt(2 * np.pi)
+
+    return scin.quad(integrand, 0, np.inf, epsabs=0, epsrel=1e-8)[0]
 alpha_mu_BER_NEP = np.frompyfunc(alpha_mu_BER_NEP_single,6,1)
     
 def alpha_mu_BER_NEP_fixed(alpha,mu,r,Ie,NEP,BW):
-    u = np.linspace(0,100,10000)
-    integrand = alpha_mu_pdf(alpha,mu,r,Ie,u)*scsp.erfc(SNR0_NEP(u,NEP,BW)*u/(2*np.sqrt(2)))
-    return 0.5*scin.trapz(integrand,u)
+    return alpha_mu_BER_NEP_single(alpha, mu, r, Ie, NEP, BW)
 alpha_mu_BER_NEP_f = np.frompyfunc(alpha_mu_BER_NEP_fixed,6,1)
     
 '''def gamma_gamma_distrib_cdf_alt7(sig2_x,sig2_y,Ie,It,orders=[2,3]):

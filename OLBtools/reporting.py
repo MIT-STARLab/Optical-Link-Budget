@@ -280,7 +280,7 @@ class CapacityVsRange(Report):
             amp_noise_density=self.APD_current_noise)
 
         # Estimate required bandwidth for givien BER
-        detector_bw = olb.suported_bandwidth_OOK(pd,P_rx_avg,self.target_BER)
+        detector_bw = olb.suported_bandwidth_OOK(pd, 2 * P_rx_avg, self.target_BER)
 
         # Supported bandwidth is at most hardware bandwidth
         detector_bw = olb.filter_maximum(detector_bw, self.APD_bandwidth, 1)

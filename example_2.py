@@ -99,7 +99,7 @@ pd = olb.Photodiode(
     bandwidth=10e6,
     excess_noise_factor=Fn_apd,
     dark_current=i_dark_apd)
-SNR_10 = pd.SNR(pdfPs)
+SNR_10 = 2 * pd.ook_q(2 * pdfPs)
 BER_10 = olb.BER_OOK_integrated(SNR_10,pdfst)
 
 pd = olb.Photodiode(
@@ -108,7 +108,7 @@ pd = olb.Photodiode(
     bandwidth=100e6,
     excess_noise_factor=Fn_apd,
     dark_current=i_dark_apd)
-SNR_100 = pd.SNR(pdfPs)
+SNR_100 = 2 * pd.ook_q(2 * pdfPs)
 BER_100 = olb.BER_OOK_integrated(SNR_100,pdfst)
 
 pd = olb.Photodiode(
@@ -117,7 +117,7 @@ pd = olb.Photodiode(
     bandwidth=1000e6,
     excess_noise_factor=Fn_apd,
     dark_current=i_dark_apd)
-SNR_1000 = pd.SNR(pdfPs)
+SNR_1000 = 2 * pd.ook_q(2 * pdfPs)
 BER_1000 = olb.BER_OOK_integrated(SNR_1000,pdfst)
 
 if 1:
