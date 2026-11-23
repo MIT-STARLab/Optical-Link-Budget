@@ -1,5 +1,7 @@
 from . import *
 
+from functools import partial
+
 import numpy as np
 
 import scipy.special as scsp
@@ -22,10 +24,36 @@ def Cn2_HV_ACTLIMB(h, H0):
     Ck = 1e-10*10**(h/25e3)
     return HV + Nh2*Ck
 
-def Cn2_HV_57(h):
-    # Hufnagel-Valley 5/7
-    HV = 1.7e-14*np.exp(-h/100) + 2.7e-16*np.exp(-h/1500) + 3.6e-3*(1e-5*h)**10*np.exp(-h/1000)
-    return HV
+def Cn2_HV_57(h, *, slew_rate=0.0, v_g=None):
+    """Return the Hufnagel-Valley 5/7 profile at height h in metres.
+
+    Andrews and Phillips, Chapter 12, Eqs. (1)-(3). slew_rate is the
+    apparent satellite angular rate in rad/s. v_g is ground wind in m/s
+    and defaults to the value that reproduces the nominal 5/7 profile.
+    """
+    h = np.asarray(h, dtype=float)
+    slew_rate = np.abs(slew_rate)
+    wind_coefficient = 3.6e-3 + np.zeros_like(slew_rate)
+    if v_g is not None or np.any(slew_rate):
+        if v_g is None:
+            # This ground wind reproduces the legacy 3.6e-3 coefficient
+            # at zero slew (an RMS wind of about 21.019 m/s).
+            v_g = 2.776682184073259
+        wind_heights = np.linspace(5000, 20000, 257)
+        wind = (
+            np.asarray(v_g)[..., np.newaxis]
+            + 30 * np.exp(-((wind_heights - 9400) / 4800)**2)
+            + slew_rate[..., np.newaxis] * wind_heights
+        )
+        mean_square_wind = scin.simpson(wind**2, x=wind_heights) / 15000
+        wind_coefficient = 0.00594 * mean_square_wind / 27**2
+
+    return (
+        1.7e-14 * np.exp(-h / 100)
+        + 2.7e-16 * np.exp(-h / 1500)
+        + wind_coefficient * (1e-5 * h)**10 * np.exp(-h / 1000)
+    )
+
 
 def Cn2_HV_ACTLIMB_best(h):
     # ACTLIMB best (x0.1)
@@ -223,7 +251,7 @@ def scintillation_weak_uplink_tracked(G_Lambda,G_Theta,Cn2,h_0,H,zenith,k,n_int=
     H: target altitude
     return normalized scintillation index squared'''
     
-    mu3u = mu3u_par(G_Lambda,G_Theta,Cn2,h_0,H,n_int=1000)
+    mu3u = mu3u_par(G_Lambda,G_Theta,Cn2,h_0,H,n_int=n_int)
     
     #Eq 58
     sigBu2 = 8.70*mu3u*k**(7/6)*(H-h_0)**(5/6)/np.cos(zenith)**(11/6)
@@ -429,36 +457,56 @@ def get_scintillation_uplink_untracked_xy(h_0,H,zenith,k,W_0,Cn2,r,Cr=2*np.pi):
     
     return apply_min(sig2_x), apply_min(sig2_y)
     
-def get_scintillation_uplink_tracked_xy(h_0,H,zenith,k,W_0,Cn2,Cr=2*np.pi):
-    
-    L = slant_range(h_0,H,zenith,Re)
+def _scintillation_profile(Cn2, slew_rate):
+    if Cn2 is None:
+        Cn2 = Cn2_HV_57
+    slew_rate = np.asarray(slew_rate)
+    if slew_rate.ndim == 0:
+        if slew_rate == 0:
+            return Cn2
+        return partial(Cn2, slew_rate=slew_rate.item())
+    return partial(Cn2, slew_rate=slew_rate[..., np.newaxis])
 
-    G_Lambda,G_Theta = gaussian_beam_parameters_colimated(L,k,W_0)
-    
-    W = beam_radius(W_0,G_Theta,G_Lambda)
-    
-    sigBu2 = scintillation_weak_uplink_tracked(G_Lambda,G_Theta,Cn2,h_0,H,zenith,k)
-    
-    sigIltracked2_x,sigIltracked2_y = scintillation_uplink_tracked_xy(G_Theta,sigBu2)
-    
-    sig2_x = sigIltracked2_x
-    
-    sig2_y = sigIltracked2_y
-    
-    return apply_min(sigIltracked2_x), apply_min(sigIltracked2_y)
-    
-def get_scintillation_downlink_xy(h_0,H,zenith,k,W_0,Cn2,Cr=2*np.pi):
-    
-    sigR2 = scintillation_downlink_alt(W_0,Cn2,h_0,H,zenith,k)
-    
-    sigIltracked2_x,sigIltracked2_y = scintillation_downlink_xy(sigR2)
-    
-    sig2_x = sigIltracked2_x
-    
-    sig2_y = sigIltracked2_y
-    
-    return apply_min(sigIltracked2_x), apply_min(sigIltracked2_y)
-    
+
+def get_scintillation_uplink_tracked_xy(
+    h_0, H, zenith, k, W_0, Cn2=None, Cr=2*np.pi, *, slew_rate=0.0,
+):
+    """Return on-axis large- and small-scale scintillation for a tracked uplink.
+
+    Uses Chapter 12, Eqs. (9), (14), (55), (58), and (60), with turbulence
+    integrated up to 20 km. zenith is in radians and slew_rate is the
+    apparent tracking rate in rad/s. Cn2 defaults to the Hufnagel-Valley
+    5/7 profile. A custom profile must accept the slew_rate keyword when
+    using slew. Rate arrays broadcast with the link inputs. Custom profiles
+    receive rate arrays with a trailing singleton axis for altitude.
+    """
+    Cn2 = _scintillation_profile(Cn2, slew_rate)
+    L = (np.asarray(H) - h_0) / np.cos(zenith)
+    G_Lambda, G_Theta = gaussian_beam_parameters_colimated(L, k, W_0)
+    sigBu2 = scintillation_weak_uplink_tracked(G_Lambda, G_Theta, Cn2, h_0, H, zenith, k)
+    sig2_x, sig2_y = scintillation_uplink_tracked_xy(G_Theta, sigBu2)
+    return apply_min(sig2_x), apply_min(sig2_y)
+
+
+def get_scintillation_downlink_xy(
+    h_0, H, zenith, k, W_0, Cn2=None, Cr=2*np.pi, *, slew_rate=0.0,
+):
+    """Return large- and small-scale scintillation for a plane-wave downlink.
+
+    Uses Chapter 12, Eqs. (38) and (68), with turbulence integrated up to
+    20 km. zenith is in radians and slew_rate is the apparent tracking rate
+    in rad/s. Cn2 defaults to the Hufnagel-Valley 5/7 profile. A custom
+    profile must accept the slew_rate keyword when using slew. Rate arrays
+    broadcast with the link inputs. Custom profiles receive rate arrays
+    with a trailing singleton axis for altitude. W_0 and Cr are retained
+    for compatibility.
+    """
+    Cn2 = _scintillation_profile(Cn2, slew_rate)
+    sigR2 = scintillation_downlink_alt(W_0, Cn2, h_0, H, zenith, k)
+    sig2_x, sig2_y = scintillation_downlink_xy(sigR2)
+    return apply_min(sig2_x), apply_min(sig2_y)
+
+
 def gamma_gamma_distrib_pdf(sig2_x,sig2_y,Ie,I):
 
     alpha = 1/mpin(sig2_x)
