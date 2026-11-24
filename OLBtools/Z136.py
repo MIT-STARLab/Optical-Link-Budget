@@ -69,12 +69,12 @@ def ocular_MPE_point_source_NIR(wavelength:np.ndarray=1064e-9,exposure_time:np.n
     retina_MPE += mask_1050_1400 * mask_above_10s  * 5e-3*C_c
 
     cornea_MPE += mask_1200_1400 * mask_10ps_1ms   * 0.3*K_l
-    cornea_MPE += mask_1200_1400 * mask_1ms_4s     * 0.3*K_l + 0.56*exposure_time**(0.25) - 0.1
-    cornea_MPE += mask_1200_1400 * mask_4s_10s     * 0.3*K_l + 0.7
+    cornea_MPE += mask_1200_1400 * mask_1ms_4s     * (0.3*K_l + 0.56*exposure_time**(0.25) - 0.1)
+    cornea_MPE += mask_1200_1400 * mask_4s_10s     * (0.3*K_l + 0.7)
 
     cornea_MPE /= exposure_time # convert to W
 
-    cornea_MPE += mask_1200_1400 * mask_above_10s  * 0.03*K_l + 0.07
+    cornea_MPE += mask_1200_1400 * mask_above_10s  * (0.03*K_l + 0.07)
 
     cornea_MPE *= 1e4 # cm2 to m2
     retina_MPE *= 1e4
@@ -83,6 +83,45 @@ def ocular_MPE_point_source_NIR(wavelength:np.ndarray=1064e-9,exposure_time:np.n
     MPE = (MPE < 1e19)*MPE
    
     return MPE, retina_MPE, cornea_MPE
+
+
+# U.S. Army TB MED 524, Table E-1 (ANSI-derived), and ICNIRP 2013, Table 5.
+# 1500–1800 nm: 1 J/cm² up to 10 s, then 0.1 W/cm² through 30 ks.
+# https://www.icnirp.org/cms/upload/publications/ICNIRPLaser180gdl_2013_2020.pdf
+_CORNEAL_CW_DOSE = 1e4  # J/m²
+_CORNEAL_CW_MPE = 1e3  # W/m²
+_CORNEAL_MIN_TIME = 1e-9  # s
+CORNEAL_CW_MAX_TIME = 30e3  # s
+
+
+def ocular_MPE_cw_1500_1800(wavelength=1550e-9, exposure_time=10.0):
+    """Return the corneal exposure limit in W/m² for a CW-equivalent source.
+
+    Wavelength is in metres (1500 nm inclusive, 1800 nm exclusive).
+    Duration is in seconds from 1 ns through 30 ks. Compare the limit
+    with irradiance averaged over the applicable ocular limiting aperture,
+    or use peak irradiance as a conservative upper bound.
+    """
+    wavelength, exposure_time = np.broadcast_arrays(wavelength, exposure_time)
+    if not np.all((1500e-9 <= wavelength) & (wavelength < 1800e-9)):
+        raise ValueError("wavelength must be in [1500, 1800) nm")
+    if not np.all((_CORNEAL_MIN_TIME <= exposure_time) & (exposure_time <= CORNEAL_CW_MAX_TIME)):
+        raise ValueError("exposure_time must be in [1 ns, 30 ks]")
+    return np.maximum(_CORNEAL_CW_DOSE / exposure_time, _CORNEAL_CW_MPE)
+
+
+def max_ocular_exposure_cw_1500_1800(irradiance, wavelength=1550e-9):
+    """Invert the corneal limit for CW irradiance in W/m².
+
+    A return value of 30 ks means the limit is met through the modeled
+    duration. Zero means no duration in the modeled range meets the limit.
+    """
+    irradiance, limit = np.broadcast_arrays(irradiance, ocular_MPE_cw_1500_1800(wavelength))
+    if not np.all(np.isfinite(irradiance) & (irradiance >= 0)):
+        raise ValueError("irradiance must be finite and nonnegative")
+    short_time = _CORNEAL_CW_DOSE / np.maximum(irradiance, limit)
+    return np.where(irradiance <= limit, CORNEAL_CW_MAX_TIME,
+                    np.where(short_time >= _CORNEAL_MIN_TIME, short_time, 0))
 
 def ocular_MPE_point_source_VIS(wavelength:np.ndarray=1064e-9,exposure_time:np.ndarray=30000):
     '''Based on Z136.1 table 5b, return MPE in W.m-2
